@@ -41,6 +41,12 @@ async function queryEvents(eventType: string, limit: number, descending: boolean
   return json.result?.data || []
 }
 
+/** Extract package address from a full event type string like "0xabc::moonbags::CreatedEventV2" */
+function getPackageFromEventType(eventType: string): string {
+  const match = eventType.match(/^(0x[a-f0-9]{40})::/)
+  return match ? match[1] : ''
+}
+
 /** Fetch SUI price in USD from multiple sources. */
 async function fetchSuiPriceUsd(): Promise<number> {
   // 1. Try CoinGecko (cache 60s to avoid rate limits)
@@ -197,8 +203,9 @@ export async function GET() {
         const thresholdSui = Number(thresholdMist) / 1e9
         const progress = thresholdMist > 0n ? (Number(realSuiMist) / Number(thresholdMist)) * 100 : 0
 
-        // Which quote token? Detect from the package that created the pool.
-        const eventPackage = e.transaction?.data?.sender || ''
+        // Detect pair token from the event type package (not the transaction sender)
+        const eventType = e.type || e.eventType || ''
+        const eventPackage = getPackageFromEventType(eventType)
         const pairToken = isAidaPackage(eventPackage) ? 'AIDA' : 'SUI'
         const quotePriceUsd = pairToken === 'AIDA' ? aidaPriceUsd : suiPriceUsd
         const marketCap = price * totalSupply * quotePriceUsd
