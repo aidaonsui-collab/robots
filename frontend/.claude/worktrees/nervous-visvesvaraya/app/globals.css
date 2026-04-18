@@ -1,0 +1,196 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 100%;
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 100%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 280 80% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 10% 10%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 10% 15%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 150 80% 50%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 10% 15%;
+    --input: 240 10% 15%;
+    --ring: 280 80% 60%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0f;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #a855f7, #22c55e);
+  border-radius: 4px;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(90deg, #a855f7, #ec4899, #22c55e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow effects */
+.glow-purple {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.4), 0 0 40px rgba(168, 85, 247, 0.1);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.4), 0 0 40px rgba(34, 197, 94, 0.1);
+}
+
+.glow-pink {
+  box-shadow: 0 0 20px rgba(236, 72, 153, 0.4);
+}
+
+/* Ticker / Marquee */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.ticker-tape {
+  animation: marquee 30s linear infinite;
+}
+
+.ticker-tape:hover {
+  animation-play-state: paused;
+}
+
+/* Pulse dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* Card shimmer on hover */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.card-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(168,85,247,0.05), transparent);
+  background-size: 200% 100%;
+}
+
+.card-shimmer:hover {
+  animation: shimmer 1.5s ease infinite;
+}
+
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+/* Slide in from left */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease forwards;
+}
+
+/* Glow border gradient animation */
+@keyframes borderGlow {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+.border-glow-anim {
+  animation: borderGlow 2s ease-in-out infinite;
+}
+
+/* Stats bar counter glow */
+.stat-value {
+  text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+}
+
+.stat-value-green {
+  text-shadow: 0 0 12px rgba(34, 197, 94, 0.6);
+}
+
+/* ConnectButton overrides */
+.sui-connect-button {
+  background-color: rgba(147, 51, 234, 0.2) !important;
+  color: #d8b4fe !important;
+  border: 1px solid rgba(168, 85, 247, 0.4) !important;
+}
+
+.sui-connect-button:hover {
+  background-color: rgba(168, 85, 247, 0.2) !important;
+}
+
+.sui-connected-wallet {
+  color: #4ade80 !important;
+  background-color: rgba(34, 197, 94, 0.1) !important;
+}
+
+/* Connected wallet state */
+.sui-connected-wallet, 
+[data-connected-wallet],
+.wallet-status-connected {
+  color: #4ade80 !important;
+  background-color: rgba(34, 197, 94, 0.15) !important;
+}
+
+.sui-connected-wallet span,
+[data-connected-wallet] span,
+.wallet-status-connected span {
+  color: #4ade80 !important;
+}
+
+/* Force all wallet button text to be bright */
+.suiet-wallet-modal button div[role="button"],
+.suiet-wallet-button,
+.sui-connect-button span,
+.sui-connected-wallet * {
+  color: #4ade80 !important;
+}
+
+/* Dark mode for wallet modal */
+.suiet-wallet-modal {
+  background: #0f0f17 !important;
+  color: #fff !important;
+}

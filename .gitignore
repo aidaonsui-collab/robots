@@ -3,3 +3,18 @@ contracts/moonbags_aida/build/
 contracts/moonbags_aida/Move.lock
 *.mv
 *.mvc
+
+# Frontend
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+frontend/.vercel/
+
+# Frontend env files with secrets
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Claude dev files
+frontend/.claude/
+frontend/tsconfig.tsbuildinfo

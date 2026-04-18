@@ -1,0 +1,140 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { fetchSuiPriceUsd } from '@/lib/tokens'
+
+export const dynamic = 'force-dynamic'
+
+const RPC = 'https://fullnode.mainnet.sui.io'
+const SUI_DECIMALS = 9
+const TOKEN_DECIMALS = 6
+
+/**
+ * GET /api/pool/[poolId]
+ *
+ * Fetches pool data for either:
+ *   - A bonding curve pool (has virtual_sui_reserves / virtual_token_reserves)
+ *   - A Momentum CLMM pool (has sqrt_price / reserve_x / reserve_y)
+ *
+ * Detects pool type automatically from on-chain fields.
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ poolId: string }> }
+) {
+  try {
+    const { poolId } = await params
+
+    const suiPriceUsd = await fetchSuiPriceUsd()
+
+    const response = await fetch(RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'sui_getObject',
+        params: [poolId, { showContent: true, showType: true }],
+      }),
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      return NextResponse.json({ error: 'Failed to fetch pool from RPC' }, { status: 500 })
+    }
+
+    const data = await response.json()
+    if (!data.result?.data?.content?.fields) {
+      return NextResponse.json({ error: 'Pool not found' }, { status: 404 })
+    }
+
+    const fields = data.result.data.content.fields
+    const objectType: string = data.result.data.type || ''
+
+    // ── CLMM pool (Momentum): has sqrt_price ────────────────────────────────────
+    if ('sqrt_price' in fields) {
+      const reserveX = BigInt(fields.reserve_x ?? '0')
+      const reserveY = BigInt(fields.reserve_y ?? '0')
+      const sqrtPriceRaw = BigInt(fields.sqrt_price || '0')
+      const liquidity = BigInt(fields.liquidity ?? '0')
+      const feeRate = Number(fields.fee_rate ?? 3000)
+
+      // Momentum stores sqrtPrice as sqrt(Y/X) * 2^64
+      // price (SUI/token, X/Y in human units) = 10^(tokDec-suiDec) / sqrtPriceFloat^2
+      let price = 0
+      if (sqrtPriceRaw > 0n) {
+        const sqrtPriceFloat = Number(sqrtPriceRaw) / Math.pow(2, 64)
+        price = Math.pow(10, TOKEN_DECIMALS - SUI_DECIMALS) / (sqrtPriceFloat * sqrtPriceFloat)
+      }
+
+      const suiInPool = Number(reserveX) / 1e9
+      const tokensInPool = Number(reserveY) / 1e6
+
+      // Total supply is typically ~1B tokens for Odyssey launches
+      const TOTAL_SUPPLY = 1_000_000_000
+      const marketCap = price * TOTAL_SUPPLY * suiPriceUsd
+
+      const isActive = liquidity > 0n
+
+      return NextResponse.json({
+        poolId,
+        poolType: 'clmm',
+        price,
+        marketCap,
+        suiInPool,
+        tokensInPool,
+        reserveX: suiInPool,
+        reserveY: tokensInPool,
+        liquidity: liquidity.toString(),
+        feeRate,
+        isActive,
+        isCompleted: true, // CLMM pools are graduated/completed
+        objectType,
+      })
+    }
+
+    // ── Bonding curve pool ───────────────────────────────────────────────────────
+    const virtualSui = BigInt(fields.virtual_sui_reserves || '0')
+    const virtualToken = BigInt(fields.virtual_token_reserves || '0')
+    const feesCollected = BigInt(fields.fees_collected || '0')
+    const targetRaise = BigInt(fields.target_raise_amount || '0')
+    const remainTokenRaw = BigInt(fields.remain_token_reserves?.fields?.balance || '0')
+    const isCompleted = fields.is_completed || false
+
+    // Price in SUI per token (apply correct decimal scaling)
+    const price = virtualToken > 0n
+      ? (Number(virtualSui) / 1e9) / (Number(virtualToken) / 1e6)
+      : 0
+
+    // Total supply: 2 × remain_token_reserves (curve + LP halves); fallback 1B
+    const totalSupply = remainTokenRaw > 0n
+      ? 2 * Number(remainTokenRaw) / 1e6
+      : 1_000_000_000
+
+    // Market cap in USD
+    const marketCap = price * totalSupply * suiPriceUsd
+
+    const raised = Number(virtualSui) / 1e9
+    const target = Number(targetRaise) / 1e9
+    const bondingProgress = target > 0 ? (raised / target) * 100 : 0
+
+    const estimatedVolume = Number(feesCollected) / 1e9 / 0.02
+
+    return NextResponse.json({
+      poolId,
+      poolType: 'bonding',
+      price,
+      marketCap,
+      virtualSuiReserves: raised,
+      virtualTokenReserves: Number(virtualToken) / 1e6,
+      feesCollected: Number(feesCollected) / 1e9,
+      targetRaise: target,
+      raised,
+      bondingProgress,
+      isCompleted,
+      volume24h: estimatedVolume,
+      trades24h: 0,
+    })
+  } catch (error: any) {
+    console.error('Pool fetch error:', error)
+    return NextResponse.json({ error: error.message || 'Failed to fetch pool' }, { status: 500 })
+  }
+}

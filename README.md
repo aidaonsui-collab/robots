@@ -1,59 +1,66 @@
-# Robots — AIDA-Paired Bonding Curve Contracts
+# Robots 🤖
 
-Fork of the Odyssey Moonbags bonding curve contract, adapted to use **AIDA** as the quote token instead of SUI.
+AIDA-paired DeFi contracts and forked frontend for TheOdyssey.
 
-## Key Difference from Moonbags (SUI pairs)
-
-| | Moonbags (SUI) | Moonbags AIDA |
-|---|---|---|
-| Quote token | `Coin<SUI>` | `Coin<AIDA>` |
-| Module | `moonbags` | `moonbags_aida` |
-| AIDA import | N/A | `0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA` |
-
-## Bluefin Integration
-
-The **AIDA/SUI pool** on Bluefin is used as the price reference:
-- **Pool ID:** `0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b`
-- **Pool type:** `Pool<AIDA, SUI>`
-- **Reserves:** ~123M AIDA / ~3.78M SUI
-
-## Contract Structure
+## Repos Structure
 
 ```
-contracts/moonbags_aida/
-├── sources/
-│   ├── moonbags_aida.move     # Main bonding curve contract
-│   ├── moonbags_stake.move    # Staking module (AIDA rewards)
-│   ├── moonbags_token_lock.move
-│   ├── curves.move
-│   └── utils.move
-└── sources_deps/
-    └── aida/                  # Mock AIDA module (compilation only — NOT published)
-        └── sources/aida.move
+robots/
+├── contracts/
+│   └── moonbags_aida/     # AIDA-paired bonding curve (fork of Odyssey Moonbags v12)
+├── frontend/               # Forked Odyssey 2.0 with AIDA pair support
+├── scripts/
+├── tests/
+└── README.md
 ```
 
-## Build
+## Quick Start
+
+### 1. Publish the AIDA Contract
 
 ```bash
 cd contracts/moonbags_aida
-sui move build
+sui client publish --gas-budget 500000000
+# Save the new package ID and update contracts/moonbags_aida/Move.toml
 ```
 
-## Publish
+### 2. Update Frontend
 
-> ⚠️ The `sources_deps/aida` mock module is for **compilation only**. When publishing, the real AIDA module already on-chain at `0xcee208...` is used. Do NOT publish the mock aida module.
+After publishing, update `frontend/lib/contracts_aida.ts`:
+
+```typescript
+export const MOONBAGS_AIDA_CONTRACT = {
+  packageId:     '0x<NEW_PACKAGE_ID>',
+  configuration: '0x<NEW_CONFIG_ID>',
+  stakeConfig:   '0x<NEW_STAKE_CONFIG_ID>',
+  lockConfig:    '0x<NEW_LOCK_CONFIG_ID>',
+  tokenRegistry: '0x0',
+}
+```
+
+### 3. Run Frontend
 
 ```bash
-sui client publish --gas-budget 500000000
+cd frontend
+npm install
+npm run dev
 ```
 
-## Architecture
+## Key Differences: SUI vs AIDA Pairs
 
-- `Pool<Token>.real_sui_reserves` → `Coin<AIDA>` (renamed from `Coin<SUI>`)
-- All buy/sell math operates in AIDA instead of SUI
-- Staking rewards paid in AIDA
-- Graduation still goes to Momentum CLMM (SUI pair)
+| Feature | SUI Pair | AIDA Pair |
+|---------|----------|-----------|
+| Module | `moonbags` | `moonbags_aida` |
+| Quote coin | `Coin<SUI>` | `Coin<AIDA>` |
+| Contract | Odyssey v12 | `moonbags_aida` (robots) |
+| Graduation | Momentum CLMM | Momentum CLMM |
 
-## Status
+## AIDA Contract
 
-🧪 Experimental — not yet deployed to mainnet
+**Bluefin AIDA/SUI Pool:** `0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b`
+
+The bonding curve uses Bluefin as the price reference for AIDA. The AIDA/SUI pool provides on-chain pricing data.
+
+## GitHub
+
+https://github.com/aidaonsui-collab/robots

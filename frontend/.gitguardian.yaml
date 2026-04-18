@@ -1,0 +1,13 @@
+# GitGuardian configuration
+# https://docs.gitguardian.com/ggshield-docs/reference/config
+
+version: 2
+
+# Move contract source files contain public on-chain identifiers (package IDs,
+# object IDs, type names) that GitGuardian's generic high-entropy detector
+# mis-classifies as secrets. These are all published on Sui mainnet and
+# required by the contracts for type checking — they are not secrets.
+paths-ignore:
+  - contracts/**/*.move
+  - contracts/**/Move.toml
+  - contracts/**/Move.lock

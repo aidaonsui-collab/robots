@@ -1,0 +1,15 @@
+{
+  "name": "momentum-testnet-probe",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Probes the Momentum (MMT) CLMM SDK to verify Sui testnet viability before scoping a graduation/migration integration.",
+  "scripts": {
+    "verify": "node verify.mjs"
+  },
+  "dependencies": {
+    "@mmt-finance/clmm-sdk": "latest",
+    "@mysten/sui": "^1.30.0",
+    "yaml": "^2.7.0"
+  }
+}
