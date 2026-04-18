@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 const RPC = 'https://fullnode.mainnet.sui.io'
 
 // Sui events are typed by their *origin* publishing package, not the upgraded
 // one — so legacy v3-v10 tokens all emit `<legacy origin>::moonbags::CreatedEventV2`
 // while v11 (a fresh publish, not an upgrade) emits its own type. We have to
-// query both to get the full token list.
+// query all three to get the full token list.
 const ORIGIN_PACKAGE_LEGACY = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
 const ORIGIN_PACKAGE_V11    = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
 const ORIGIN_PACKAGE_V12    = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e'
+const ORIGIN_PACKAGE_AIDA   = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
 
 // Denylist — hide test/unwanted tokens. New tokens appear automatically unless added here.
 const HIDDEN_TOKENS = new Set([
@@ -84,39 +87,64 @@ async function fetchSuiPriceUsd(): Promise<number> {
   return 0
 }
 
+/** Fetch AIDA price in USD directly from DexScreener (AIDA priced in USD on DexScreener). */
+async function fetchAidaPriceUsd(): Promise<number> {
+  try {
+    const res = await fetch(
+      'https://api.dexscreener.com/latest/dex/pairs/sui/0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b',
+      { next: { revalidate: 60 } }
+    )
+    if (res.ok) {
+      const json = await res.json()
+      const pair = json?.pair || json?.pairs?.[0]
+      const priceUsd = parseFloat(pair?.priceUsd || '0')
+      if (priceUsd > 0) return priceUsd
+    }
+  } catch { /* fall through */ }
+  return 0
+}
+
 export async function GET() {
   try {
-    // Fetch SUI price once for all market cap calculations
-    const suiPriceUsd = await fetchSuiPriceUsd()
+    // Fetch prices for market cap calculations
+    const [suiPriceUsd, aidaPriceUsd] = await Promise.all([
+      fetchSuiPriceUsd(),
+      fetchAidaPriceUsd(),
+    ])
 
-    // Fetch CreatedEventV2 + TradedEventV2 from BOTH legacy and v11 origins.
+    // Fetch CreatedEventV2 + TradedEventV2 from ALL package origins.
     const [
       createdLegacy,
       createdV11,
       createdV12,
+      createdAida,
       tradesLegacy,
       tradesV11,
       tradesV12,
+      tradesAida,
     ] = await Promise.all([
       queryEvents(`${ORIGIN_PACKAGE_LEGACY}::moonbags::CreatedEventV2`, 50, true),
       queryEvents(`${ORIGIN_PACKAGE_V11}::moonbags::CreatedEventV2`,    50, true),
       queryEvents(`${ORIGIN_PACKAGE_V12}::moonbags::CreatedEventV2`,    50, true),
+      queryEvents(`${ORIGIN_PACKAGE_AIDA}::moonbags::CreatedEventV2`,   50, true),
       queryEvents(`${ORIGIN_PACKAGE_LEGACY}::moonbags::TradedEventV2`,  200, false),
       queryEvents(`${ORIGIN_PACKAGE_V11}::moonbags::TradedEventV2`,     200, false),
       queryEvents(`${ORIGIN_PACKAGE_V12}::moonbags::TradedEventV2`,     200, false),
+      queryEvents(`${ORIGIN_PACKAGE_AIDA}::moonbags::TradedEventV2`,    200, false),
     ])
 
     // Merge + dedupe by pool_id, keep newest first.
+    // Order: v12, v11, legacy, aida (v12 takes priority for same pool_id)
     const seen = new Set<string>()
     const events: any[] = []
-    for (const e of [...createdV12, ...createdV11, ...createdLegacy]) {
+    for (const e of [...createdV12, ...createdV11, ...createdLegacy, ...createdAida]) {
       const pid = e.parsedJson?.pool_id
       if (!pid || seen.has(pid)) continue
       seen.add(pid)
       events.push(e)
     }
-    const allTrades = [...tradesLegacy, ...tradesV11, ...tradesV12]
-    
+    const allTrades = [...tradesLegacy, ...tradesV11, ...tradesV12, ...tradesAida]
+
     // Build trades by pool
     const tradesByPool = new Map<string, any[]>()
     for (const e of allTrades) {
@@ -125,13 +153,16 @@ export async function GET() {
       if (!tradesByPool.has(poolId)) tradesByPool.set(poolId, [])
       tradesByPool.get(poolId)!.push(e.parsedJson)
     }
-    
+
+    // Determine which packages are AIDA-paired
+    const isAidaPackage = (pkgId: string) => pkgId === ORIGIN_PACKAGE_AIDA
+
     // Process each event into a token
     const tokens = await Promise.all(
       events.map(async (e: any) => {
         const meta = e.parsedJson
         const poolId = meta.pool_id
-        
+
         const poolRes = await fetch(RPC, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -142,17 +173,17 @@ export async function GET() {
             params: [poolId, { showContent: true, showType: true }]
           })
         })
-        
+
         const poolJson = await poolRes.json()
         const poolData = poolJson.result?.data
-        
+
         if (!poolData) return null
-        
+
         const f = poolData.content.fields
         const typeStr = poolData.content.type || ''
         const coinTypeMatch = typeStr.match(/Pool<(.+)>/)
         const coinType = coinTypeMatch ? coinTypeMatch[1] : ''
-        
+
         const virtualSui = BigInt(f.virtual_sui_reserves || '0')
         const virtualToken = BigInt(f.virtual_token_reserves || '0')
         const realSuiMist = BigInt(f.real_sui_reserves?.fields?.balance || '0')
@@ -161,21 +192,25 @@ export async function GET() {
 
         const price = virtualToken > 0n ? Number(virtualSui) / 1e9 / (Number(virtualToken) / 1e6) : 0
         // Use tradeable supply (R) not total minted (2R) — second R is locked for DEX LP.
-        // MC = spot price × R — launch MC = threshold/4 × SUI_price ≈ $1.1K at 2000 SUI threshold.
         const totalSupply = Number(remainTokenRaw) / 1e6  // R tokens
         const realSuiSui = Number(realSuiMist) / 1e9
-        const marketCap = price * totalSupply * suiPriceUsd
         const thresholdSui = Number(thresholdMist) / 1e9
         const progress = thresholdMist > 0n ? (Number(realSuiMist) / Number(thresholdMist)) * 100 : 0
-        
-        // Calculate volume from trades
+
+        // Which quote token? Detect from the package that created the pool.
+        const eventPackage = e.transaction?.data?.sender || ''
+        const pairToken = isAidaPackage(eventPackage) ? 'AIDA' : 'SUI'
+        const quotePriceUsd = pairToken === 'AIDA' ? aidaPriceUsd : suiPriceUsd
+        const marketCap = price * totalSupply * quotePriceUsd
+
+        // Calculate volume from trades (always in quote token — SUI for SUI pairs, AIDA for AIDA pairs)
         const poolTrades = tradesByPool.get(poolId) ?? []
         const now = Date.now()
         const oneHourAgo = now - 60 * 60 * 1000
         const volume1h = poolTrades
           .filter(t => Number(t.ts) >= oneHourAgo)
           .reduce((sum, t) => sum + Number(t.sui_amount || 0), 0) / 1e9
-        
+
         return {
           id: poolId,
           poolId,
@@ -197,12 +232,13 @@ export async function GET() {
           isCompleted: f.is_completed,
           createdAt: Number(meta.ts),
           creator: meta.created_by,
+          pairToken,
         }
       })
     )
-    
+
     const validTokens = tokens.filter((t): t is NonNullable<typeof t> => t !== null).filter(t => !HIDDEN_TOKENS.has(t.coinType))
-    
+
     return NextResponse.json(validTokens)
   } catch (error: any) {
     console.error('Error fetching tokens:', error)
