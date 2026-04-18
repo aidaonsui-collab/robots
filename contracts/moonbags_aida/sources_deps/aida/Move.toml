@@ -1,0 +1,9 @@
+[package]
+name = "aida"
+edition = "2024.beta"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "testnet" }
+
+[addresses]
+aida = "0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892"
