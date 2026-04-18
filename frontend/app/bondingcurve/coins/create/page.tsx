@@ -91,6 +91,17 @@ export default function CreateTokenPage() {
   const [targetRaise, setTargetRaise] = useState('2000')
   const [pairType, setPairType] = useState<PairType>('SUI')
 
+  const [aidaPrice, setAidaPrice] = useState(0)
+  useEffect(() => {
+    fetch('https://api.dexscreener.com/latest/dex/pairs/sui/0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b')
+      .then(r => r.json())
+      .then(d => setAidaPrice(parseFloat(d?.pair?.priceUsd || '0')))
+      .catch(() => {})
+  }, [])
+
+  // $500 minimum for AIDA pairs, fallback to 1000 if price unavailable
+  const MIN_AIDA = aidaPrice > 0 ? Math.ceil(500 / aidaPrice) : 1000
+
   const [formData, setFormData] = useState({
     name: '', ticker: '', description: '',
     twitter: '', telegram: '', website: '', liveStream: '',
@@ -239,8 +250,11 @@ export default function CreateTokenPage() {
     const { tokenType, capObjId, metaObjId } = publishResult
     const configSuiMist = BigInt(Math.floor((parseFloat(firstBuyAmount) || 0) * 1e9))
     const targetRaiseNum = parseFloat(targetRaise) || 0
-    if (targetRaiseNum < 1000) {
-      return alert('Minimum target raise is 1000 ' + (pairType === 'AIDA' ? 'AIDA' : 'SUI'))
+    if (pairType === 'AIDA' && targetRaiseNum < MIN_AIDA) {
+      return alert(`Minimum target raise is ${MIN_AIDA.toLocaleString()} AIDA (~$500) — check AIDA price`)
+    }
+    if (pairType === 'SUI' && targetRaiseNum < 1000) {
+      return alert('Minimum target raise is 1000 SUI')
     }
     const targetRaiseMist = BigInt(Math.floor(targetRaiseNum * 1e9))
 
@@ -620,7 +634,7 @@ export default function CreateTokenPage() {
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">SUI</span>
               </div>
-              <p className="text-xs text-gray-500 mt-2">Minimum target is 1000 SUI</p>
+              <p className="text-xs text-gray-500 mt-2">Minimum: {pairType === 'AIDA' ? `${MIN_AIDA.toLocaleString()} AIDA (~$500)` : '1000 SUI'}</p>
             </div>
 
             {/* Status */}
@@ -785,7 +799,7 @@ export default function CreateTokenPage() {
                 <div>creation fee</div>
               </div>
               <div className="bg-white/3 rounded-lg p-2 text-center">
-                <div className="text-gray-300 font-medium">{targetRaise} SUI</div>
+                <div className="text-gray-300 font-medium">{targetRaise} {pairType}</div>
                 <div>to graduate</div>
               </div>
               <div className="bg-white/3 rounded-lg p-2 text-center">
