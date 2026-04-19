@@ -1356,12 +1356,13 @@ type TabId = typeof TABS[number]['id']
 // TradingView with canvas fallback — renders TV chart when library files are present,
 // silently falls back to the custom canvas chart if missing (missing returns null).
 function TradingViewChartWithFallback({
-  poolId, symbol, priceHistory, onRefresh,
+  poolId, symbol, priceHistory, onRefresh, pairType,
 }: {
   poolId: string
   symbol: string
   priceHistory: PricePoint[]
   onRefresh?: () => void
+  pairType: 'SUI' | 'AIDA'
 }) {
   const [tvFailed, setTvFailed] = useState(false)
   const [tvMounted, setTvMounted] = useState(false)
@@ -1385,19 +1386,21 @@ function TradingViewChartWithFallback({
       symbol={symbol}
       priceHistory={priceHistory}
       onRefresh={onRefresh}
+      pairType={pairType}
       onFail={() => setTvFailed(true)}
     />
   )
 }
 
 function TvOrCanvas({
-  poolId, symbol, priceHistory, onRefresh, onFail,
+  poolId, symbol, priceHistory, onRefresh, onFail, pairType,
 }: {
   poolId: string
   symbol: string
   priceHistory: PricePoint[]
   onRefresh?: () => void
   onFail: () => void
+  pairType: 'SUI' | 'AIDA'
 }) {
   const [tvNull, setTvNull] = useState(false)
 
@@ -1415,7 +1418,7 @@ function TvOrCanvas({
     return <PriceChart poolId={poolId} priceHistory={priceHistory} symbol={symbol} onRefresh={onRefresh} />
   }
 
-  return <TradingViewChart poolId={poolId} symbol={symbol} height={480} onMissing={handleMissing} />
+  return <TradingViewChart poolId={poolId} symbol={symbol} height={480} onMissing={handleMissing} pairType={pairType} />
 }
 
 export default function CoinPage() {
