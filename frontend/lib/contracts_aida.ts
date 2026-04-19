@@ -32,8 +32,37 @@ export const MOONBAGS_AIDA_CONTRACT: MoonbagsContract = {
 // AIDA coin type string (used as typeArgument)
 export const AIDA_COIN_TYPE = '0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA'
 
+// AIDA uses 9 decimals (same as SUI)
+export const AIDA_DECIMALS = 9
+
 // Bluefin AIDA/SUI CLMM pool for price oracle
 export const BLUEFIN_AIDA_POOL = '0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b'
 
 // Bluefin spot contract (for SDK)
 export const BLUEFIN_SPOT_CONTRACT = '0x3492c874c1e3b3e2984e8c41b589e642d4d0a5d6459e5a9cfc2d52fd7c89c267'
+
+export type PairToken = 'SUI' | 'AIDA'
+
+// Given a moonbags package ID (from a pool's on-chain type), return the pair
+// token for that pool. AIDA-paired pools come from MOONBAGS_AIDA_CONTRACT;
+// all other (SUI-paired) packages return 'SUI'.
+export function getPairType(moonbagsPackageId?: string | null): PairToken {
+  return moonbagsPackageId === MOONBAGS_AIDA_CONTRACT.packageId ? 'AIDA' : 'SUI'
+}
+
+// Returns the coin type for the pair side of a pool (what users pay with).
+export function getPairCoinType(pair: PairToken): string {
+  return pair === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
+}
+
+// Fetch AIDA USD price from DexScreener via the Bluefin AIDA/SUI pool.
+// Returns 0 on failure so callers can guard with `|| fallback`.
+export async function fetchAidaPriceUsd(): Promise<number> {
+  try {
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/pairs/sui/${BLUEFIN_AIDA_POOL}`)
+    const data = await res.json()
+    return parseFloat(data?.pair?.priceUsd || '0') || 0
+  } catch {
+    return 0
+  }
+}
