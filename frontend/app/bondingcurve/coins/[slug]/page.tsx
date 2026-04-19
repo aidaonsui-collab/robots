@@ -648,7 +648,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
 
       let suiCoin
       if (pairType === 'AIDA') {
-        const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
+        const { data: aidaCoins } = suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
         if (!aidaCoins.length) throw new Error('No AIDA coins in wallet')
         const base = tx.object(aidaCoins[0].coinObjectId)
         for (let i = 1; i < aidaCoins.length; i++) {
