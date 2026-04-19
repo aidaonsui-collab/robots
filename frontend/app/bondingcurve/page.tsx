@@ -218,7 +218,8 @@ export default function BondingCurvePage() {
     volume: '1H Volume',
   }
 
-  const totalVolume = realTokens.reduce((s, t) => s + (t.realSuiRaised ?? (t as any).realSuiSui ?? 0), 0)
+  const totalSuiTraded = realTokens.reduce((s, t) => t.pairType === 'AIDA' ? s : s + (t.realSuiRaised ?? 0), 0)
+  const totalAidaTraded = realTokens.reduce((s, t) => t.pairType === 'AIDA' ? s + (t.realSuiRaised ?? 0) : s, 0)
 
   // Sparkline data generators for stat cards
   const genSparkline = (base: number, volatility: number, points = 30) =>
@@ -235,16 +236,19 @@ export default function BondingCurvePage() {
             <div className="bg-[#0d0f1a] rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.12] transition-colors">
               <div className="relative z-10">
                 <p className="text-xs text-gray-500 font-medium tracking-wide uppercase mb-3">Total Volume</p>
-                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalVolume.toFixed(2)} SUI</p>
+                <div className="space-y-0.5 mb-2">
+                  <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalSuiTraded.toFixed(2)} SUI</p>
+                  <p className="text-lg font-semibold text-[#D4AF37] tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalAidaTraded.toLocaleString(undefined, { maximumFractionDigits: 0 })} AIDA</p>
+                </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ SUI Raised</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ Volume</span>
                   <span className="text-[10px] text-gray-600">All time</span>
                 </div>
               </div>
               <div className="mt-4 -mx-5 -mb-5">
                 <svg viewBox="0 0 200 64" className="w-full" style={{ height: 64 }} preserveAspectRatio="none">
                   <defs><linearGradient id="sv" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#D4AF37" stopOpacity="0.3"/><stop offset="100%" stopColor="#D4AF37" stopOpacity="0.02"/></linearGradient></defs>
-                  {(() => { const d = genSparkline(totalVolume || 100, 30); const h = 64; const mx = Math.max(...d); const mn = Math.min(...d); const rg = mx - mn || 1; const pts = d.map((v: number, i: number) => ({ x: (i / (d.length - 1)) * 200, y: h - ((v - mn) / rg) * (h * 0.85) - h * 0.05 })); const line = pts.map((p: {x: number; y: number}, i: number) => (i === 0 ? `M${p.x},${p.y}` : `L${p.x},${p.y}`)).join(' '); return (<><path d={`${line} L200,${h} L0,${h} Z`} fill="url(#sv)"/><path d={line} fill="none" stroke="#D4AF37" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>); })()}
+                  {(() => { const d = genSparkline((totalSuiTraded + totalAidaTraded / 1_000_000) || 100, 30); const h = 64; const mx = Math.max(...d); const mn = Math.min(...d); const rg = mx - mn || 1; const pts = d.map((v: number, i: number) => ({ x: (i / (d.length - 1)) * 200, y: h - ((v - mn) / rg) * (h * 0.85) - h * 0.05 })); const line = pts.map((p: {x: number; y: number}, i: number) => (i === 0 ? `M${p.x},${p.y}` : `L${p.x},${p.y}`)).join(' '); return (<><path d={`${line} L200,${h} L0,${h} Z`} fill="url(#sv)"/><path d={line} fill="none" stroke="#D4AF37" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>); })()}
                 </svg>
               </div>
             </div>
