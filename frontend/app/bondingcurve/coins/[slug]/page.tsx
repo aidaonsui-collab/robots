@@ -9,7 +9,7 @@ import {
   Lock, Star, Flame, Info, BarChart2, MessageSquare,
   List, Layers, Crown, Zap, DollarSign, PieChart, AlertCircle, Loader2
 } from 'lucide-react'
-import { useCurrentWallet, useCurrentAccount, useSuiClientQuery, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { useCurrentWallet, useCurrentAccount, useSuiClientQuery, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import {
   MOONBAGS_CONTRACT_LEGACY,
@@ -564,7 +564,14 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
   const account = useCurrentAccount()
   const address = account?.address
 
-  // Fetch real SUI balance
+  // SuiClient instance — used in handleTrade for getCoins (AIDA pair)
+  const suiClient = useSuiClient()
+
+  // Derive pairType and quoteCoinType from poolData at render time
+  const pairType = poolData ? (poolData.pairType ?? 'SUI') : 'SUI'
+  const quoteCoinType = pairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
+
+  // Fetch real pair-token (SUI or AIDA) balance
   const { data: balanceData } = useSuiClientQuery(
     'getBalance',
     { owner: address ?? '', coinType: quoteCoinType },
@@ -629,7 +636,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
   // Both v11 and v12 use the 6-arg stripped buy (no Cetus/Turbos deps).
   const isStrippedBuy = isV11Pool || isV12Pool
 
-  const handleTrade = () => {
+  const handleTrade = async () => {
     if (!poolData || !address || !amount || parseFloat(amount) <= 0) return
     setTxError(null)
     setTxSuccess(null)
@@ -648,7 +655,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
 
       let suiCoin
       if (pairType === 'AIDA') {
-        const { data: aidaCoins } = suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
+        const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
         if (!aidaCoins.length) throw new Error('No AIDA coins in wallet')
         const base = tx.object(aidaCoins[0].coinObjectId)
         for (let i = 1; i < aidaCoins.length; i++) {
@@ -883,7 +890,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
         </div>
         <div className="flex justify-between">
           <span className="text-gray-500">Platform Fee (1%)</span>
-          <span className="text-gray-400">{fee.toFixed(4)} SUI</span>
+          <span className="text-gray-400">{fee.toFixed(4)} ${pairType}</span>
         </div>
         <div className="border-t border-gray-800/50 pt-2.5 flex justify-between items-center">
           <span className="text-gray-500">Slippage</span>
@@ -1645,7 +1652,7 @@ export default function CoinPage() {
         <div className="py-3 border-b border-gray-800/40">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-medium text-gray-500">Bonding Curve Progress</span>
-            <span className="text-xs font-bold text-[#D4AF37]">{token.progress.toFixed(1)}% — {(token.threshold - token.realSuiRaised).toFixed(1)} SUI until DEX migration</span>
+            <span className="text-xs font-bold text-[#D4AF37]">{token.progress.toFixed(1)}% — {(token.threshold - token.realSuiRaised).toFixed(1)} ${pairType} until DEX migration</span>
           </div>
           <div className="h-2 bg-[#14142a] rounded-full overflow-hidden">
             <div
@@ -1778,12 +1785,12 @@ export default function CoinPage() {
                             <div className="grid grid-cols-2 gap-4">
                               <div className="bg-slate-800/50 rounded-xl p-4">
                                 <div className="text-sm text-gray-400 mb-1">Total Trading Fees</div>
-                                <div className="text-2xl font-bold text-white">{(token.volume24h * 0.02).toFixed(2)} SUI</div>
+                                <div className="text-2xl font-bold text-white">{(token.volume24h * 0.02).toFixed(2)} ${pairType}</div>
                                 <div className="text-xs text-gray-500 mt-1">2% of volume</div>
                               </div>
                               <div className="bg-slate-800/50 rounded-xl p-4">
                                 <div className="text-sm text-gray-400 mb-1">To AIDA Stakers</div>
-                                <div className="text-2xl font-bold text-[#D4AF37]">{(token.volume24h * 0.02 * 0.3).toFixed(2)} SUI</div>
+                                <div className="text-2xl font-bold text-[#D4AF37]">{(token.volume24h * 0.02 * 0.3).toFixed(2)} ${pairType}</div>
                                 <div className="text-xs text-gray-500 mt-1">30% of fees</div>
                               </div>
                             </div>
@@ -1806,7 +1813,7 @@ export default function CoinPage() {
                           <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-xl p-4">
                             <div className="text-sm text-gray-400 mb-1">Available to Withdraw</div>
                             <div className="text-3xl font-bold text-[#D4AF37]">
-                              {(token.volume24h * 0.02 * 0.4).toFixed(2)} SUI
+                              {(token.volume24h * 0.02 * 0.4).toFixed(2)} ${pairType}
                             </div>
                           </div>
 
@@ -1817,7 +1824,7 @@ export default function CoinPage() {
                           <div className="border-t border-gray-800/50 pt-4">
                             <div className="text-sm text-gray-400 mb-3">Lifetime Earnings</div>
                             <div className="text-2xl font-bold text-white mb-1">
-                              {(token.volume24h * 0.02 * 0.4).toFixed(2)} SUI
+                              {(token.volume24h * 0.02 * 0.4).toFixed(2)} ${pairType}
                             </div>
                             <div className="text-xs text-gray-500">
                               From {trades.length} trades
