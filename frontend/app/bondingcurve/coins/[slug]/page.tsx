@@ -568,8 +568,10 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
   const suiClient = useSuiClient()
 
   // Derive pairType and quoteCoinType from poolData at render time
-  const pairType = poolData ? (poolData.pairType ?? 'SUI') : 'SUI'
-  const quoteCoinType = pairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
+  // Derive pairType and quoteCoinType from poolData at render time
+  // (pairType is also in scope from CoinPage outer, used in handleTrade)
+  const localPairType = poolData ? (poolData.pairType ?? 'SUI') : 'SUI'
+  const quoteCoinType = localPairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
 
   // Fetch real pair-token (SUI or AIDA) balance
   const { data: balanceData } = useSuiClientQuery(
@@ -1433,6 +1435,10 @@ export default function CoinPage() {
   const [holderCount, setHolderCount] = useState<number | null>(null)
   const [caCopied, setCaCopied] = useState(false)
 
+  // Top-level pairType — derived from poolData, used in handleTrade via closure.
+  // TradeTab reads poolData directly as prop, no need to pass pairType down.
+  const pairType = poolData?.pairType ?? 'SUI'
+
   const handleTradeSuccess = () => setRefetchCount(c => c + 1)
 
   // Fetch real on-chain data
@@ -1445,9 +1451,6 @@ export default function CoinPage() {
     Promise.all([fetchPoolToken(decodedSlug), fetchPoolTrades(decodedSlug)]).then(([tokenData, tradeData]) => {
       if (tokenData) setPoolData(tokenData)
       if (tradeData.length > 0) {
-        const pairType = getPairType(tokenData?.moonbagsPackageId)
-        const quoteCoinType = pairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
-
         // Map TradeEvent to TradeRow
         const mapped: TradeRow[] = tradeData.map(t => ({
           type: t.isBuy ? 'buy' as const : 'sell' as const,
