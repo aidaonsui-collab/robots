@@ -277,7 +277,7 @@ export default function CreateTokenPage() {
           let baseCoin = tx2.object(aidaCoins[0].coinObjectId)
           for (let i = 1; i < aidaCoins.length; i++) {
             tx2.moveCall({
-              target: '0x1::pay::join',
+              target: '0x2::pay::join',
               typeArguments: [AIDA_COIN_TYPE],
               arguments: [baseCoin, tx2.object(aidaCoins[i].coinObjectId)],
             })
