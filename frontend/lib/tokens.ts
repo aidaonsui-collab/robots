@@ -368,6 +368,7 @@ export async function fetchPoolToken(poolIdOrCoinType: string): Promise<PoolToke
       virtualTokenReserves: virtualToken,
       coinType,
       moonbagsPackageId,
+      pairType,
       volume1h: 0,
       priceChange24h: 0,
       age,

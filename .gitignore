@@ -18,3 +18,4 @@ frontend/.env.*.local
 # Claude dev files
 frontend/.claude/
 frontend/tsconfig.tsbuildinfo
+.vercel
