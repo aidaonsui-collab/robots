@@ -632,7 +632,7 @@ export default function CreateTokenPage() {
                   placeholder="2000"
                   className="w-full bg-white/5 border border-gray-700 rounded-xl py-3 px-4 pr-16 text-white placeholder:text-gray-600 focus:outline-none focus:border-purple-500/50"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">SUI</span>
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">{pairType}</span>
               </div>
               <p className="text-xs text-gray-500 mt-2">Minimum: {pairType === 'AIDA' ? `${MIN_AIDA.toLocaleString()} AIDA (~$500)` : '1000 SUI'}</p>
             </div>
@@ -777,12 +777,12 @@ export default function CreateTokenPage() {
 
             {/* Initial Buy */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Initial Buy (SUI)</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Initial Buy ({pairType})</label>
               <div className="relative">
                 <input type="number" min="1" step="0.5" value={formData.initialSui}
                   onChange={e => set('initialSui', e.target.value)}
                   className="w-full bg-white/5 border border-gray-700 rounded-xl py-3 px-4 pr-16 text-white placeholder:text-gray-600 focus:outline-none focus:border-purple-500/50" />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">SUI</span>
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">{pairType}</span>
               </div>
               <div className="mt-2 flex items-center justify-between bg-purple-900/20 border border-purple-500/20 rounded-xl px-4 py-2.5">
                 <span className="text-xs text-gray-400">You will receive ~</span>
@@ -843,5 +843,6 @@ export default function CreateTokenPage() {
     </main>
   )
 }
+
 
 
