@@ -16,7 +16,7 @@ export interface TVBar {
 
 const SUPPORTED_RESOLUTIONS = ['1', '5', '15', '60', '240', '1D']
 
-export function createDatafeed(poolId: string, symbol: string) {
+export function createDatafeed(poolId: string, symbol: string, pairType: 'SUI' | 'AIDA' = 'SUI') {
   const subscriptions = new Map<string, ReturnType<typeof setInterval>>()
 
   async function fetchCandles(resolution: string): Promise<TVBar[]> {
@@ -37,7 +37,7 @@ export function createDatafeed(poolId: string, symbol: string) {
         supports_marks: false,
         supports_timescale_marks: false,
         supports_time: false,
-        currency_codes: ['SUI'],
+        currency_codes: [pairType],
       }), 0)
     },
 
@@ -53,9 +53,9 @@ export function createDatafeed(poolId: string, symbol: string) {
       setTimeout(() => {
         if (!poolId) { onError('No pool ID provided'); return }
         onResolve({
-          name: `${symbol}/SUI`,
-          ticker: `${symbol}/SUI`,
-          description: `${symbol} / SUI`,
+          name: `${symbol}/${pairType}`,
+          ticker: `${symbol}/${pairType}`,
+          description: `${symbol} / ${pairType}`,
           type: 'crypto',
           session: '24x7',
           timezone: 'Etc/UTC',
