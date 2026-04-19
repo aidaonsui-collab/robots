@@ -559,7 +559,7 @@ function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, mo
 // ============================================
 // TAB: TRADE (Buy/Sell full panel)
 // ============================================
-function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKEN, poolData: PoolToken | null, onTradeSuccess?: () => void }) {
+function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof MOCK_TOKEN, poolData: PoolToken | null, pairType: string, onTradeSuccess?: () => void }) {
   const { isConnected: connected } = useCurrentWallet()
   const account = useCurrentAccount()
   const address = account?.address
@@ -567,11 +567,8 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
   // SuiClient instance — used in handleTrade for getCoins (AIDA pair)
   const suiClient = useSuiClient()
 
-  // Derive pairType and quoteCoinType from poolData at render time
-  // Derive pairType and quoteCoinType from poolData at render time
-  // (pairType is also in scope from CoinPage outer, used in handleTrade)
-  const localPairType = poolData ? (poolData.pairType ?? 'SUI') : 'SUI'
-  const quoteCoinType = localPairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
+  // Derive quoteCoinType from pairType prop
+  const quoteCoinType = pairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
 
   // Fetch real pair-token (SUI or AIDA) balance
   const { data: balanceData } = useSuiClientQuery(
@@ -1732,7 +1729,7 @@ export default function CoinPage() {
                 {activeTab === 'txns' && <TxnsTab trades={trades} coinType={poolData?.coinType} poolId={poolData?.poolId} creatorAddress={poolData?.creator} />}
                 {activeTab === 'trade' && (
                   <div className="p-5">
-                    <TradeTab token={token} poolData={poolData} onTradeSuccess={handleTradeSuccess} />
+                    <TradeTab token={token} poolData={poolData} pairType={pairType} onTradeSuccess={handleTradeSuccess} />
                   </div>
                 )}
                 {activeTab === 'info' && <InfoTab token={token} coinType={poolData?.coinType} poolId={poolData?.poolId} creatorAddress={poolData?.creator} connectedAddress={connectedAddress} moonbagsPackageId={poolData?.moonbagsPackageId} />}
@@ -1871,7 +1868,7 @@ export default function CoinPage() {
                 <h3 className="text-sm font-bold text-gray-200 mb-4 flex items-center gap-2">
                   <Zap className="w-4 h-4 text-yellow-400" /> Quick Trade
                 </h3>
-                <TradeTab token={token} poolData={poolData} onTradeSuccess={handleTradeSuccess} />
+                <TradeTab token={token} poolData={poolData} pairType={pairType} onTradeSuccess={handleTradeSuccess} />
               </div>
 
               {/* Top Holders mini */}
