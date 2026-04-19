@@ -14,6 +14,7 @@ interface Props {
   symbol: string
   height?: number
   onMissing?: () => void
+  pairType?: 'SUI' | 'AIDA'
 }
 
 // Attempt to load the charting_library script. Tries standalone bundle first,
@@ -41,7 +42,7 @@ function loadScript(onLoad: () => void, onError: () => void) {
   tryNext()
 }
 
-export default function TradingViewChart({ poolId, symbol, height = 480, onMissing }: Props) {
+export default function TradingViewChart({ poolId, symbol, height = 480, onMissing, pairType = 'SUI' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetRef    = useRef<any>(null)
   const [ready, setReady]   = useState(false)
@@ -69,10 +70,10 @@ export default function TradingViewChart({ poolId, symbol, height = 480, onMissi
       // Target container element (not a string ID — direct DOM ref)
       container: containerRef.current,
 
-      datafeed: createDatafeed(poolId, symbol),
+      datafeed: createDatafeed(poolId, symbol, pairType),
       library_path: '/charting_library/charting_library/',
 
-      symbol: `${symbol}/SUI`,
+      symbol: `${symbol}/${pairType}`,
       interval: '5',
       timezone: 'Etc/UTC',
       theme: 'Dark',
@@ -128,7 +129,7 @@ export default function TradingViewChart({ poolId, symbol, height = 480, onMissi
         widgetRef.current = null
       }
     }
-  }, [ready, poolId, symbol, height])
+  }, [ready, poolId, symbol, height, pairType])
 
   if (missing) return null   // Caller falls back to canvas chart
 
