@@ -676,8 +676,8 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
         // v11 is a fresh publish like v12 — both share the same configuration/lockConfig objects.
         // (Confirmed: STAKE_CFG_V11 == MOONBAGS_CONTRACT_V12.stakeConfig)
         const buyPkg = isV11Pool ? V11_PKG_ID : mbagsContract.packageId
-        const buyCfg = MOONBAGS_CONTRACT_V12.configuration
-        const buyLock = MOONBAGS_CONTRACT_V12.lockConfig
+        const buyCfg = mbagsContract.configuration
+        const buyLock = mbagsContract.lockConfig
         tx.moveCall({
           target: `${buyPkg}::moonbags::buy_exact_in_with_lock`,
           typeArguments: [poolData.coinType],
@@ -754,7 +754,7 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
       // v11 pools: use V11_PKG_ID as target (stripped sell, same as v12) with shared config.
       // Legacy pools: use mbagsContract (MOONBAGS_CONTRACT_LEGACY) — 10-arg buy but same 4-arg sell.
       const sellPkg = isV11Pool ? V11_PKG_ID : mbagsContract.packageId
-      const sellCfg = isV11Pool ? MOONBAGS_CONTRACT_V12.configuration : mbagsContract.configuration
+      const sellCfg = mbagsContract.configuration
       tx.moveCall({
         target: `${sellPkg}::moonbags::sell`,
         typeArguments: [poolData.coinType],

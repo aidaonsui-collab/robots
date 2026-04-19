@@ -1,3 +1,4 @@
+import { MOONBAGS_AIDA_CONTRACT } from './contracts_aida'
 // ============================================================
 // TheOdyssey.fun — Contract Addresses (Verified on-chain)
 // Last verified: 2026-04-09 — v11 coexist refactor
@@ -83,6 +84,7 @@ export const MOONBAGS_KNOWN_PACKAGES: readonly string[] = [
  * legacy chain or to v11.
  */
 export function getMoonbagsContractForPackage(packageId?: string | null): MoonbagsContract {
+  if (packageId === MOONBAGS_AIDA_CONTRACT.packageId) return MOONBAGS_AIDA_CONTRACT
   if (!packageId) return MOONBAGS_CONTRACT_V12
   const normalized = packageId.startsWith('0x') ? packageId.toLowerCase() : `0x${packageId.toLowerCase()}`
   if (MOONBAGS_LEGACY_PACKAGE_IDS.some(p => p.toLowerCase() === normalized)) {
