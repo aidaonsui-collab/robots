@@ -264,35 +264,41 @@ export default function CreateTokenPage() {
       const isAidaPair = pairType === 'AIDA'
       const coinType = isAidaPair ? AIDA_COIN_TYPE : '0x2::sui::SUI'
 
-      // ── firstBuy coin ─────────────────────────────────────────────
-      // For SUI pairs: split from gas wallet
-      // For AIDA pairs: fetch AIDA coins from wallet, join them, split
-      let firstBuy: any = null
-      if (configSuiMist > 0n) {
-        if (isAidaPair && address) {
-          // Fetch and join user's AIDA coins, then split
-          const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
-          if (!aidaCoins.length) throw new Error('No AIDA coins found in wallet. Please acquire AIDA before creating an AIDA pair pool.')
-          // Use first AIDA coin as base, join all others into it
-          let baseCoin = tx2.object(aidaCoins[0].coinObjectId)
-          for (let i = 1; i < aidaCoins.length; i++) {
-            tx2.moveCall({
-              target: '0x2::pay::join',
-              typeArguments: [AIDA_COIN_TYPE],
-              arguments: [baseCoin, tx2.object(aidaCoins[i].coinObjectId)],
-            })
-          }
-          const [splitCoin] = tx2.splitCoins(baseCoin, [tx2.pure.u64(configSuiMist)])
-          firstBuy = splitCoin
-        } else {
-          const [fb] = tx2.splitCoins(tx2.gas, [tx2.pure.u64(configSuiMist)])
+      // ── firstBuy + fee coins ───────────────────────────────────────
+      // AIDA pair: both fee and firstBuy are Coin<AIDA>, split from user's AIDA balance
+      // SUI pair: both are Coin<SUI>, split from gas
+      let firstBuy: any
+      let fee: any
+      if (isAidaPair) {
+        if (!address) throw new Error('Connect wallet')
+        const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
+        if (!aidaCoins.length) throw new Error('No AIDA coins found in wallet. Please acquire AIDA before creating an AIDA pair pool.')
+        const baseCoin = tx2.object(aidaCoins[0].coinObjectId)
+        for (let i = 1; i < aidaCoins.length; i++) {
+          tx2.moveCall({
+            target: '0x2::pay::join',
+            typeArguments: [AIDA_COIN_TYPE],
+            arguments: [baseCoin, tx2.object(aidaCoins[i].coinObjectId)],
+          })
+        }
+        const [feeCoin] = tx2.splitCoins(baseCoin, [tx2.pure.u64(POOL_CREATION_FEE_MIST)])
+        fee = feeCoin
+        if (configSuiMist > 0n) {
+          const [fb] = tx2.splitCoins(baseCoin, [tx2.pure.u64(configSuiMist)])
           firstBuy = fb
+        } else {
+          firstBuy = tx2.moveCall({ target: '0x2::coin::zero', typeArguments: [AIDA_COIN_TYPE], arguments: [] })
         }
       } else {
-        firstBuy = tx2.moveCall({ target: '0x2::coin::zero', typeArguments: [coinType], arguments: [] })
+        const [feeCoin] = tx2.splitCoins(tx2.gas, [tx2.pure.u64(POOL_CREATION_FEE_MIST)])
+        fee = feeCoin
+        if (configSuiMist > 0n) {
+          const [fb] = tx2.splitCoins(tx2.gas, [tx2.pure.u64(configSuiMist)])
+          firstBuy = fb
+        } else {
+          firstBuy = tx2.moveCall({ target: '0x2::coin::zero', typeArguments: ['0x2::sui::SUI'], arguments: [] })
+        }
       }
-
-      const [fee] = tx2.splitCoins(tx2.gas, [tx2.pure.u64(POOL_CREATION_FEE_MIST)])
 
       const virtualSuiStart = targetRaiseMist / 3n  // threshold/3 with new config ratio
       const minTokensOut: bigint = configSuiMist > 0n
