@@ -122,8 +122,10 @@ const V11_PACKAGE = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce
 // v12 is the current package (freezes CoinMetadata at creation)
 const V12_PACKAGE = MOONBAGS_CONTRACT_V12.packageId
 
-// Packages to fan out event queries across (legacy chain + v11 + v12).
-const EVENT_SOURCE_PACKAGES = [ORIGIN_PACKAGE, V11_PACKAGE, V12_PACKAGE] as const
+const AIDA_PACKAGE = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
+
+// Packages to fan out event queries across (legacy chain + v11 + v12 + AIDA).
+const EVENT_SOURCE_PACKAGES = [ORIGIN_PACKAGE, V11_PACKAGE, V12_PACKAGE, AIDA_PACKAGE] as const
 
 export interface PoolToken {
   id: string                 // unique ID for card keys (same as poolId)
