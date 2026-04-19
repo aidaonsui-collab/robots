@@ -43,7 +43,7 @@ async function queryEvents(eventType: string, limit: number, descending: boolean
 
 /** Extract package address from a full event type string like "0xabc::moonbags::CreatedEventV2" */
 function getPackageFromEventType(eventType: string): string {
-  const match = eventType.match(/^(0x[a-f0-9]{40})::/)
+  const match = eventType.match(/^(0x[a-f0-9]{64})::/)
   return match ? match[1] : ''
 }
 
