@@ -91,16 +91,13 @@ export default function CreateTokenPage() {
   const [targetRaise, setTargetRaise] = useState('2000')
   const [pairType, setPairType] = useState<PairType>('SUI')
 
-  const [aidaPrice, setAidaPrice] = useState(0)
-  useEffect(() => {
-    fetch('https://api.dexscreener.com/latest/dex/pairs/sui/0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b')
-      .then(r => r.json())
-      .then(d => setAidaPrice(parseFloat(d?.pair?.priceUsd || '0')))
-      .catch(() => {})
-  }, [])
+  const MIN_AIDA = 10_000_000
 
-  // $500 minimum for AIDA pairs, fallback to 1000 if price unavailable
-  const MIN_AIDA = aidaPrice > 0 ? Math.ceil(500 / aidaPrice) : 1000
+  useEffect(() => {
+    if (pairType === 'AIDA' && parseFloat(targetRaise) < MIN_AIDA) {
+      setTargetRaise(String(MIN_AIDA))
+    }
+  }, [pairType])
 
   const [formData, setFormData] = useState({
     name: '', ticker: '', description: '',
@@ -251,7 +248,7 @@ export default function CreateTokenPage() {
     const configSuiMist = BigInt(Math.floor((parseFloat(firstBuyAmount) || 0) * 1e9))
     const targetRaiseNum = parseFloat(targetRaise) || 0
     if (pairType === 'AIDA' && targetRaiseNum < MIN_AIDA) {
-      return alert(`Minimum target raise is ${MIN_AIDA.toLocaleString()} AIDA (~$500) — check AIDA price`)
+      return alert(`Minimum target raise is ${MIN_AIDA.toLocaleString()} AIDA`)
     }
     if (pairType === 'SUI' && targetRaiseNum < 1000) {
       return alert('Minimum target raise is 1000 SUI')
@@ -634,7 +631,7 @@ export default function CreateTokenPage() {
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">{pairType}</span>
               </div>
-              <p className="text-xs text-gray-500 mt-2">Minimum: {pairType === 'AIDA' ? `${MIN_AIDA.toLocaleString()} AIDA (~$500)` : '1000 SUI'}</p>
+              <p className="text-xs text-gray-500 mt-2">Minimum: {pairType === 'AIDA' ? `${MIN_AIDA.toLocaleString()} AIDA` : '1000 SUI'}</p>
             </div>
 
             {/* Status */}
