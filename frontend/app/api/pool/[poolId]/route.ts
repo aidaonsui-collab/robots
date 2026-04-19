@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchSuiPriceUsd } from '@/lib/tokens'
+import { fetchAidaPriceUsd, getPairType, MOONBAGS_AIDA_CONTRACT } from '@/lib/contracts_aida'
 
 export const dynamic = 'force-dynamic'
 
 const RPC = 'https://fullnode.mainnet.sui.io'
 const SUI_DECIMALS = 9
 const TOKEN_DECIMALS = 6
+
+// Extract the moonbags package ID from an on-chain pool's object type string.
+// Handles both bonding curve ("<pkg>::moonbags::Pool<T>") and any other format
+// where the package ID is the first segment before "::".
+function extractPackageId(objectType: string): string | null {
+  const m = objectType.match(/^(0x[0-9a-fA-F]+)::/)
+  return m ? m[1] : null
+}
 
 /**
  * GET /api/pool/[poolId]
@@ -14,7 +23,9 @@ const TOKEN_DECIMALS = 6
  *   - A bonding curve pool (has virtual_sui_reserves / virtual_token_reserves)
  *   - A Momentum CLMM pool (has sqrt_price / reserve_x / reserve_y)
  *
- * Detects pool type automatically from on-chain fields.
+ * Detects pool type automatically from on-chain fields, and derives the pair
+ * token (SUI vs AIDA) from the pool's package ID so USD prices reflect the
+ * correct quote asset.
  */
 export async function GET(
   request: NextRequest,
@@ -23,7 +34,10 @@ export async function GET(
   try {
     const { poolId } = await params
 
-    const suiPriceUsd = await fetchSuiPriceUsd()
+    const [suiPriceUsd, aidaPriceUsd] = await Promise.all([
+      fetchSuiPriceUsd(),
+      fetchAidaPriceUsd(),
+    ])
 
     const response = await fetch(RPC, {
       method: 'POST',
@@ -49,6 +63,10 @@ export async function GET(
     const fields = data.result.data.content.fields
     const objectType: string = data.result.data.type || ''
 
+    const packageId = extractPackageId(objectType)
+    const pairType = getPairType(packageId)
+    const quotePriceUsd = pairType === 'AIDA' ? aidaPriceUsd : suiPriceUsd
+
     // ── CLMM pool (Momentum): has sqrt_price ────────────────────────────────────
     if ('sqrt_price' in fields) {
       const reserveX = BigInt(fields.reserve_x ?? '0')
@@ -58,30 +76,32 @@ export async function GET(
       const feeRate = Number(fields.fee_rate ?? 3000)
 
       // Momentum stores sqrtPrice as sqrt(Y/X) * 2^64
-      // price (SUI/token, X/Y in human units) = 10^(tokDec-suiDec) / sqrtPriceFloat^2
+      // price (quote/token, X/Y in human units) = 10^(tokDec-quoteDec) / sqrtPriceFloat^2
       let price = 0
       if (sqrtPriceRaw > 0n) {
         const sqrtPriceFloat = Number(sqrtPriceRaw) / Math.pow(2, 64)
         price = Math.pow(10, TOKEN_DECIMALS - SUI_DECIMALS) / (sqrtPriceFloat * sqrtPriceFloat)
       }
 
-      const suiInPool = Number(reserveX) / 1e9
+      const quoteInPool = Number(reserveX) / 1e9
       const tokensInPool = Number(reserveY) / 1e6
 
       // Total supply is typically ~1B tokens for Odyssey launches
       const TOTAL_SUPPLY = 1_000_000_000
-      const marketCap = price * TOTAL_SUPPLY * suiPriceUsd
+      const marketCap = price * TOTAL_SUPPLY * quotePriceUsd
 
       const isActive = liquidity > 0n
 
       return NextResponse.json({
         poolId,
         poolType: 'clmm',
+        pairType,
         price,
         marketCap,
-        suiInPool,
+        suiInPool: quoteInPool,   // legacy field name
+        quoteInPool,
         tokensInPool,
-        reserveX: suiInPool,
+        reserveX: quoteInPool,
         reserveY: tokensInPool,
         liquidity: liquidity.toString(),
         feeRate,
@@ -99,7 +119,7 @@ export async function GET(
     const remainTokenRaw = BigInt(fields.remain_token_reserves?.fields?.balance || '0')
     const isCompleted = fields.is_completed || false
 
-    // Price in SUI per token (apply correct decimal scaling)
+    // Price in quote-token per token (apply correct decimal scaling)
     const price = virtualToken > 0n
       ? (Number(virtualSui) / 1e9) / (Number(virtualToken) / 1e6)
       : 0
@@ -110,7 +130,7 @@ export async function GET(
       : 1_000_000_000
 
     // Market cap in USD
-    const marketCap = price * totalSupply * suiPriceUsd
+    const marketCap = price * totalSupply * quotePriceUsd
 
     const raised = Number(virtualSui) / 1e9
     const target = Number(targetRaise) / 1e9
@@ -121,9 +141,11 @@ export async function GET(
     return NextResponse.json({
       poolId,
       poolType: 'bonding',
+      pairType,
       price,
       marketCap,
-      virtualSuiReserves: raised,
+      virtualSuiReserves: raised,   // legacy field name
+      virtualQuoteReserves: raised,
       virtualTokenReserves: Number(virtualToken) / 1e6,
       feesCollected: Number(feesCollected) / 1e9,
       targetRaise: target,
