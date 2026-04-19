@@ -218,8 +218,16 @@ export default function BondingCurvePage() {
     volume: '1H Volume',
   }
 
-  const totalSuiTraded = realTokens.reduce((s, t) => t.pairType === 'AIDA' ? s : s + (t.realSuiRaised ?? 0), 0)
-  const totalAidaTraded = realTokens.reduce((s, t) => t.pairType === 'AIDA' ? s + (t.realSuiRaised ?? 0) : s, 0)
+  const totalSuiTraded = realTokens.reduce((s, t) => {
+  const isAida = t.pairType === 'AIDA' || (t as any).pairToken === 'AIDA'
+  const amt = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
+  return isAida ? s : s + amt
+}, 0)
+const totalAidaTraded = realTokens.reduce((s, t) => {
+  const isAida = t.pairType === 'AIDA' || (t as any).pairToken === 'AIDA'
+  const amt = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
+  return isAida ? s + amt : s
+}, 0)
 
   // Sparkline data generators for stat cards
   const genSparkline = (base: number, volatility: number, points = 30) =>
