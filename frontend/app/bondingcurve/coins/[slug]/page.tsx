@@ -20,8 +20,8 @@ import {
   AIDA_CONTRACT,
   PLATFORM_TOKEN_CONTRACT,
   getMoonbagsContractForPackage,
-import { AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
 } from '@/lib/contracts'
+import { AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
 
 // V11 was a fresh publish using the same shared config/lockConfig as legacy.
 // It's now grouped under MOONBAGS_LEGACY_PACKAGE_IDS but needs separate routing
