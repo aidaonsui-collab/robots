@@ -66,3 +66,4 @@ export async function fetchAidaPriceUsd(): Promise<number> {
     return 0
   }
 }
+}

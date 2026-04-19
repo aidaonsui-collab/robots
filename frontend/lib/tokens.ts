@@ -1,4 +1,5 @@
 import { ODYSSEY_CONTRACT, BACKEND_URL, MOONBAGS_CONTRACT_V12 } from './contracts'
+import { fetchAidaPriceUsd, getPairType, type PairToken } from './contracts_aida'
 import { TOKEN_CONFIG } from './token-config'
 import { kv } from '@vercel/kv'
 
@@ -148,7 +149,8 @@ export interface PoolToken {
   virtualSuiReserves: bigint
   virtualTokenReserves: bigint
   coinType: string           // e.g. "0x57ac...::coin_template::COIN_TEMPLATE"
-  moonbagsPackageId: string  // package segment of Pool object type — used for per-pool routing (legacy vs v11)
+  moonbagsPackageId: string
+  pairType?: PairToken // 'SUI' or 'AIDA'  // package segment of Pool object type — used for per-pool routing (legacy vs v11)
   volume1h: number           // SUI traded in last 1 hour
   priceChange24h: number     // % price change over last 24 hours (can be negative)
   isAiLaunched?: boolean     // true if launched by AI agent
@@ -318,10 +320,14 @@ export async function fetchPoolToken(poolIdOrCoinType: string): Promise<PoolToke
     if (!creationEvent) return null
     const meta = creationEvent.parsedJson
 
-    const [streamUrl, suiPriceUsd] = await Promise.all([
+    const [streamUrl, suiPriceUsd, aidaPriceUsd] = await Promise.all([
       fetchStreamUrl(poolId),
       fetchSuiPriceUsd(),
+      fetchAidaPriceUsd(),
     ])
+    const pairType = getPairType(moonbagsPackageId)
+    const quotePriceUsd = pairType === 'AIDA' ? aidaPriceUsd : suiPriceUsd
+
     const creator = meta.created_by || ''
     const now = Date.now()
     const createdAt = creationEvent.timestampMs || now
@@ -332,8 +338,8 @@ export async function fetchPoolToken(poolIdOrCoinType: string): Promise<PoolToke
     else if (ageMs < 86400000) age = `${Math.floor(ageMs / 3600000)}h`
     else age = `${Math.floor(ageMs / 86400000)}d`
 
-    // Market cap = spot price × R supply × SUI price (USD)
-    const marketCapUsd = price * totalSupply * suiPriceUsd
+    // Market cap = spot price × R supply × quote-token price (USD)
+    const marketCapUsd = price * totalSupply * quotePriceUsd
 
     return {
       id: poolId,
@@ -508,8 +514,11 @@ export async function fetchAllPoolTokens(): Promise<PoolToken[]> {
       tradesByPool.get(poolId)!.push(e.parsedJson)
     }
 
-    // Fetch SUI price once for all market cap calculations
-    const suiPriceUsd = await fetchSuiPriceUsd()
+    // Fetch SUI and AIDA prices once for all market cap calculations
+    const [suiPriceUsd, aidaPriceUsd] = await Promise.all([
+      fetchSuiPriceUsd(),
+      fetchAidaPriceUsd(),
+    ])
 
     const tokens: (PoolToken | null)[] = await Promise.all(
       events.map(async (e: any) => {
@@ -534,6 +543,8 @@ export async function fetchAllPoolTokens(): Promise<PoolToken[]> {
         const coinTypeMatch = typeStr.match(/Pool<(.+)>/)
         const coinType = coinTypeMatch ? coinTypeMatch[1] : ''
         const moonbagsPackageId = typeStr.split('::')[0] || ''
+        const pairType = getPairType(moonbagsPackageId)
+        const quotePriceUsd = pairType === 'AIDA' ? aidaPriceUsd : suiPriceUsd
 
         const virtualSui   = BigInt(f.virtual_sui_reserves)
         const virtualToken = BigInt(f.virtual_token_reserves)
@@ -605,13 +616,14 @@ export async function fetchAllPoolTokens(): Promise<PoolToken[]> {
           threshold: thresholdSui,
           progress: Math.min(100, progress),
           bondingProgress: Math.min(100, progress),
-          marketCap: price * totalSupply * suiPriceUsd,
+          marketCap: price * totalSupply * quotePriceUsd,
           totalSupply,
           isCompleted,
           virtualSuiReserves: virtualSui,
           virtualTokenReserves: virtualToken,
           coinType,
           moonbagsPackageId,
+          pairType,
           volume1h,
           priceChange24h,
           age,

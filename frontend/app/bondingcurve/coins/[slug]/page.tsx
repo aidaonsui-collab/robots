@@ -18,6 +18,7 @@ import {
   SUI_CLOCK,
   SUI_METADATA_ID,
   AIDA_CONTRACT,
+import { AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
   PLATFORM_TOKEN_CONTRACT,
   getMoonbagsContractForPackage,
 } from '@/lib/contracts'
@@ -566,7 +567,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
   // Fetch real SUI balance
   const { data: balanceData } = useSuiClientQuery(
     'getBalance',
-    { owner: address ?? '', coinType: '0x2::sui::SUI' },
+    { owner: address ?? '', coinType: quoteCoinType },
     { enabled: !!address }
   )
   const suiBalance = balanceData
@@ -644,7 +645,25 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
 
       // Contract charges 2% fee (200 bps) — coin must cover amount_in + fee + buffer
       const coinAmount = amountInMist * 103n / 100n
-      const [suiCoin] = tx.splitCoins(tx.gas, [coinAmount])
+
+      let suiCoin
+      if (pairType === 'AIDA') {
+        const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
+        if (!aidaCoins.length) throw new Error('No AIDA coins in wallet')
+        const base = tx.object(aidaCoins[0].coinObjectId)
+        for (let i = 1; i < aidaCoins.length; i++) {
+          tx.moveCall({
+            target: '0x2::pay::join',
+            typeArguments: [AIDA_COIN_TYPE],
+            arguments: [base, tx.object(aidaCoins[i].coinObjectId)],
+          })
+        }
+        const [split] = tx.splitCoins(base, [coinAmount])
+        suiCoin = split
+      } else {
+        const [split] = tx.splitCoins(tx.gas, [coinAmount])
+        suiCoin = split
+      }
 
       if (isStrippedBuy) {
         // v11 and v12: stripped Cetus/Turbos deps, 6-arg buy_exact_in_with_lock.
@@ -793,7 +812,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
               onClick={() => setAmount(mode === 'buy' ? suiBalance.toString() : tokenBalance.toString())}
               className="text-xs text-[#D4AF37] hover:text-[#D4AF37] transition-colors"
             >
-              Max: {mode === 'buy' ? `${suiBalance} SUI` : `${tokenBalance} ${token.symbol}`}
+              Max: {mode === 'buy' ? `${suiBalance} ${pairType}` : `${tokenBalance} ${token.symbol}`}
             </button>
           )}
         </div>
@@ -809,7 +828,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
             <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#FFD700] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
               {mode === 'buy' ? 'S' : token.symbol[0]}
             </div>
-            <span className="text-sm font-semibold text-gray-200">{mode === 'buy' ? 'SUI' : token.symbol}</span>
+            <span className="text-sm font-semibold text-gray-200">{mode === 'buy' ? pairType : token.symbol}</span>
           </div>
         </div>
 
@@ -821,7 +840,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
               onClick={() => setAmount(mode === 'buy' ? q.toString() : (tokenBalance * q / 100).toFixed(2))}
               className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-white/5 hover:bg-[#D4AF37]/20 text-gray-400 hover:text-[#D4AF37] border border-white/5 hover:border-[#D4AF37]/30 transition-all"
             >
-              {mode === 'buy' ? `${q} SUI` : `${q}%`}
+              {mode === 'buy' ? `${q} ${pairType}` : `${q}%`}
             </button>
           ))}
         </div>
@@ -847,7 +866,7 @@ function TradeTab({ token, poolData, onTradeSuccess }: { token: typeof MOCK_TOKE
             <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#FFD700] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
               {mode === 'buy' ? token.symbol[0] : 'S'}
             </div>
-            <span className="text-sm font-semibold text-gray-200">{mode === 'buy' ? token.symbol : 'SUI'}</span>
+            <span className="text-sm font-semibold text-gray-200">{mode === 'buy' ? token.symbol : pairType}</span>
           </div>
         </div>
       </div>
@@ -1419,6 +1438,9 @@ export default function CoinPage() {
     Promise.all([fetchPoolToken(decodedSlug), fetchPoolTrades(decodedSlug)]).then(([tokenData, tradeData]) => {
       if (tokenData) setPoolData(tokenData)
       if (tradeData.length > 0) {
+        const pairType = getPairType(tokenData?.moonbagsPackageId)
+        const quoteCoinType = pairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
+
         // Map TradeEvent to TradeRow
         const mapped: TradeRow[] = tradeData.map(t => ({
           type: t.isBuy ? 'buy' as const : 'sell' as const,
@@ -1605,7 +1627,7 @@ export default function CoinPage() {
         <div className="flex flex-wrap gap-2 py-4 border-b border-gray-800/40">
           {[
             { label: 'Mkt Cap', value: token.marketCap >= 1_000_000 ? `$${(token.marketCap / 1_000_000).toFixed(2)}M` : token.marketCap >= 1000 ? `$${(token.marketCap / 1000).toFixed(1)}K` : `$${token.marketCap.toFixed(0)}`, color: 'text-[#D4AF37]' },
-            { label: 'Volume 24h', value: `${(token.volume24h / 1000).toFixed(1)}K SUI`, color: 'text-blue-400' },
+            { label: 'Volume 24h', value: `${(token.volume24h / 1000).toFixed(1)}K ${pairType}`, color: 'text-blue-400' },
             { label: 'Holders', value: holderCount !== null ? holderCount.toLocaleString() : '—', color: 'text-cyan-400' },
             { label: 'SUI Rewards', value: `${token.suiRewards} SUI`, color: 'text-green-400' },
             { label: 'Bonding', value: `${token.progress}%`, color: 'text-pink-400' },
@@ -1665,6 +1687,7 @@ export default function CoinPage() {
                 symbol={token.symbol}
                 priceHistory={priceHistory}
                 onRefresh={handleTradeSuccess}
+                pairType={pairType}
               />
             ) : (
               <PriceChart priceHistory={priceHistory} symbol={token.symbol} onRefresh={handleTradeSuccess} />
