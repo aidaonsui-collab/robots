@@ -7,6 +7,8 @@ const SUI_RPC = 'https://fullnode.mainnet.sui.io'
 const EVENT_PACKAGES = [
   '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd', // origin
   '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813', // v11
+  '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e', // v12
+  '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8', // AIDA-paired fork
 ]
 
 // How long to serve cached candles before re-fetching (seconds)
