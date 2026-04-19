@@ -633,7 +633,7 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
   const isV11Pool = poolPkgId === V11_PKG_ID
   const isV12Pool = poolPkgId === MOONBAGS_CONTRACT_V12.packageId
   // Both v11 and v12 use the 6-arg stripped buy (no Cetus/Turbos deps).
-  const isStrippedBuy = isV11Pool || isV12Pool
+  const isStrippedBuy = isV11Pool || isV12Pool || pairType === 'AIDA'
 
   const handleTrade = async () => {
     if (!poolData || !address || !amount || parseFloat(amount) <= 0) return
