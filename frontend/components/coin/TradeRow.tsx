@@ -13,13 +13,14 @@ interface Trade {
 
 interface TradeRowProps {
   trade: Trade
+  pairType?: 'SUI' | 'AIDA'
 }
 
 function shortenAddress(address: string, chars = 4): string {
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`
 }
 
-export default function TradeRow({ trade }: TradeRowProps) {
+export default function TradeRow({ trade, pairType = 'SUI' }: TradeRowProps) {
   return (
     <div className="flex items-center justify-between py-3 border-b border-border/50 last:border-0 hover:bg-white/5 px-2 -mx-2 rounded-lg transition-colors">
       <div className="flex items-center gap-3">
@@ -42,7 +43,7 @@ export default function TradeRow({ trade }: TradeRowProps) {
         </div>
       </div>
       <div className="text-right">
-        <p className="font-semibold">{trade.suiAmount.toFixed(2)} SUI</p>
+        <p className="font-semibold">{trade.suiAmount.toFixed(2)} {pairType}</p>
         <p className="text-xs text-muted-foreground">
           {trade.tokenAmount.toFixed(2)} tokens
         </p>
