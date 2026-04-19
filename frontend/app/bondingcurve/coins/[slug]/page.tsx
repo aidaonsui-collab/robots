@@ -18,9 +18,9 @@ import {
   SUI_CLOCK,
   SUI_METADATA_ID,
   AIDA_CONTRACT,
-import { AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
   PLATFORM_TOKEN_CONTRACT,
   getMoonbagsContractForPackage,
+import { AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
 } from '@/lib/contracts'
 
 // V11 was a fresh publish using the same shared config/lockConfig as legacy.
