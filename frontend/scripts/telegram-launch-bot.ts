@@ -33,11 +33,13 @@ const PKG_V11 = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455
 const PKG_V12 = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e'
 
 // Olympus presale package (v8 — 32-field struct)
-const PKG_PRESALE = '0xca1a16f85e69d0c990cd393ecfc23c0ed375a55c5b125a18828157b8692c0225'
+const PKG_PRESALE = '0x4c9f2fe6a524873adea66ff6f31d6caba0df10d10ffd8b28e99d0b8e26eabc76'
 const PRESALE_POLL_MS = 15_000 // 15s
 
-// AIDA token decimals (9, same as SUI)
+// AIDA token decimals (9, same as SUI); meme tokens are 6 decimals
 const AIDA_DECIMALS = 9
+const MEME_DECIMALS = 6
+const AIDA_COIN_TYPE = '0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA'
 
 // Staking config IDs for fetching total staked
 const STAKE_CFG_LEGACY = '0x312216a4b80aa2665be3539667ef3749fafb0bde8c8ff529867ca0f0dc13bc18'
@@ -47,8 +49,10 @@ const AIDA_POOL_LEGACY = '0x2b7c1b42426abdc1ece2cea3f564e32b7809cdcebc87d08fa56b
 // DexScreener pair for AIDA price + market cap
 const AIDA_DEX_PAIR = '0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b'
 
-// GIF for stake alerts — replace with your hosted URL
+// GIF for AIDA stake alerts — replace with your hosted URL
 const STAKE_GIF_URL = process.env.STAKE_GIF_URL || 'https://image2url.com/r2/default/gifs/1775814547997-bef5e1f9-e135-4062-865d-d43aabb185c7.gif'
+// GIF for per-token stake alerts (optional — falls back to text if not set)
+const TOKEN_STAKE_GIF_URL = process.env.TOKEN_STAKE_GIF_URL || ''
 
 if (!BOT_TOKEN || !CHAT_IDS.length) {
   console.error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID env vars')
@@ -99,6 +103,9 @@ let isFirstPresalePoll = true
 let isPollingStaking = false  // lock to prevent concurrent pollStaking runs
 let isPollingPresale = false  // lock to prevent concurrent pollPresale runs
 
+// Token info cache (coinType → basic metadata), refreshed alongside tokens poll
+const tokenInfoCache = new Map<string, { name: string; symbol: string; imageUrl?: string; poolId: string }>()
+
 // Price cache
 let suiPriceUsd = 3.0
 let aidaPriceUsd = 0.0
@@ -125,6 +132,19 @@ async function refreshPrices(): Promise<void> {
     console.log(`[prices] SUI=$${suiPriceUsd.toFixed(2)}, AIDA=$${aidaPriceUsd.toFixed(6)}, FDV=${formatUsd(aidaFdvUsd)}`)
   } catch (e) {
     console.error('[prices] Fetch error:', e)
+  }
+}
+
+async function refreshTokenCache(): Promise<void> {
+  try {
+    const res = await fetch(ODYSSEY_API)
+    if (!res.ok) return
+    const tokens: Token[] = await res.json()
+    for (const t of tokens) {
+      tokenInfoCache.set(t.coinType, { name: t.name, symbol: t.symbol, imageUrl: t.imageUrl, poolId: t.poolId })
+    }
+  } catch (e) {
+    console.error('[token-cache] refresh error:', e)
   }
 }
 
@@ -410,6 +430,27 @@ async function formatStakeAlert(event: StakeEventParsed): Promise<string> {
   ].join('\n')
 }
 
+async function formatTokenStakeAlert(event: StakeEventParsed): Promise<string> {
+  const tokenInfo = tokenInfoCache.get(event.token_address)
+  const symbol = tokenInfo?.symbol || formatTokenName(event.token_address)
+  const name = tokenInfo?.name || symbol
+  const amountStr = formatAmount(event.amount, MEME_DECIMALS)
+  const poolId = tokenInfo?.poolId || ''
+
+  return [
+    `🪙🪙🪙🪙🪙🪙🪙🪙🪙🪙🪙🪙🪙`,
+    ``,
+    `🪙 <b>TOKEN STAKED</b> 🪙`,
+    ``,
+    `<b>${name}</b> ($${symbol})`,
+    ``,
+    `💰 ${amountStr} $${symbol} staked`,
+    `👤 <a href="https://suivision.xyz/account/${event.staker}">${shortAddr(event.staker)}</a>`,
+    ``,
+    poolId ? `🔗 <a href="https://www.theodyssey.fun/bondingcurve/coins/${poolId}">View on Odyssey</a>` : `🔗 <a href="https://www.theodyssey.fun/bondingcurve">Odyssey</a>`,
+  ].join('\n')
+}
+
 // ─── Olympus Presale Formatters ─────────────────────────────────────────────
 
 function formatPresaleCreatedAlert(e: any): string {
@@ -539,11 +580,16 @@ async function pollTokens(): Promise<void> {
 
     const tokens: Token[] = await res.json()
 
+    // Always keep token cache fresh for per-token stake alert lookups
+    for (const t of tokens) {
+      tokenInfoCache.set(t.coinType, { name: t.name, symbol: t.symbol, imageUrl: t.imageUrl, poolId: t.poolId })
+    }
+
     if (isFirstTokenPoll) {
       for (const t of tokens) {
         knownTokens.set(t.poolId, { isCompleted: t.isCompleted })
       }
-      console.log(`[tokens] Seeded ${knownTokens.size} existing tokens`)
+      console.log(`[tokens] Seeded ${knownTokens.size} existing tokens, ${tokenInfoCache.size} in cache`)
       isFirstTokenPoll = false
       return
     }
@@ -585,13 +631,14 @@ async function pollStaking(): Promise<void> {
   if (isPollingStaking) return
   isPollingStaking = true
   try {
-    const [stakeLegacy, stakeV11] = await Promise.all([
+    const [stakeLegacy, stakeV11, stakeV12] = await Promise.all([
       queryEvents(`${PKG_LEGACY}::moonbags_stake::StakeEvent`, 20),
       queryEvents(`${PKG_V11}::moonbags_stake::StakeEvent`, 20),
+      queryEvents(`${PKG_V12}::moonbags_stake::StakeEvent`, 20),
     ])
 
     // Merge and aggressively deduplicate by txDigest BEFORE processing
-    const allRaw = [...stakeLegacy, ...stakeV11]
+    const allRaw = [...stakeLegacy, ...stakeV11, ...stakeV12]
     const txDigestSeen = new Set<string>()
     const allStakes: any[] = []
     for (const event of allRaw) {
@@ -603,7 +650,7 @@ async function pollStaking(): Promise<void> {
       allStakes.push(event)
     }
 
-    console.log(`[staking] legacy=${stakeLegacy.length}, v11=${stakeV11.length}, after dedup=${allStakes.length}`)
+    console.log(`[staking] legacy=${stakeLegacy.length}, v11=${stakeV11.length}, v12=${stakeV12.length}, after dedup=${allStakes.length}`)
 
     if (isFirstStakePoll) {
       for (const e of allStakes) {
@@ -621,13 +668,27 @@ async function pollStaking(): Promise<void> {
       seenStakeEvents.add(key)
 
       const e = event.parsedJson as StakeEventParsed
-      console.log(`[stake] NEW: tx=${event.id?.txDigest?.slice(0,12)}, staker=${shortAddr(e.staker)}, amount=${formatAmount(e.amount, AIDA_DECIMALS)}`)
+      const isAida = e.token_address === AIDA_COIN_TYPE || e.token_address?.endsWith('::aida::AIDA')
+      console.log(`[stake] NEW: tx=${event.id?.txDigest?.slice(0,12)}, token=${isAida ? 'AIDA' : formatTokenName(e.token_address)}, staker=${shortAddr(e.staker)}`)
       await refreshPrices()
-      const msg = await formatStakeAlert(e)
-      if (STAKE_GIF_URL) {
-        await sendTelegramAnimation(STAKE_GIF_URL, msg)
+
+      if (isAida) {
+        const msg = await formatStakeAlert(e)
+        if (STAKE_GIF_URL) {
+          await sendTelegramAnimation(STAKE_GIF_URL, msg)
+        } else {
+          await sendTelegram(msg)
+        }
       } else {
-        await sendTelegram(msg)
+        const tokenInfo = tokenInfoCache.get(e.token_address)
+        const msg = await formatTokenStakeAlert(e)
+        if (TOKEN_STAKE_GIF_URL) {
+          await sendTelegramAnimation(TOKEN_STAKE_GIF_URL, msg)
+        } else if (tokenInfo?.imageUrl?.startsWith('http')) {
+          await sendTelegramPhoto(tokenInfo.imageUrl, msg)
+        } else {
+          await sendTelegram(msg)
+        }
       }
     }
 
