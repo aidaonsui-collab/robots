@@ -47,13 +47,13 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #a855f7, #22c55e);
+  background: linear-gradient(180deg, #D4AF37, #B8860B);
   border-radius: 4px;
 }
 
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(90deg, #a855f7, #ec4899, #22c55e);
+  background: linear-gradient(90deg, #D4AF37, #FFD700, #B8860B);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -111,7 +111,7 @@
 }
 
 .card-shimmer {
-  background: linear-gradient(90deg, transparent, rgba(168,85,247,0.05), transparent);
+  background: linear-gradient(90deg, transparent, rgba(212,175,55,0.04), transparent);
   background-size: 200% 100%;
 }
 
@@ -152,11 +152,162 @@
 
 /* Stats bar counter glow */
 .stat-value {
-  text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+  text-shadow: 0 0 12px rgba(212, 175, 55, 0.4);
 }
 
 .stat-value-green {
   text-shadow: 0 0 12px rgba(34, 197, 94, 0.6);
+}
+
+/* Spotlight card animated gradient border */
+@keyframes borderRotate {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.spotlight-border-anim {
+  background: linear-gradient(135deg, #D4AF37, #FFD700, #B8860B, #8B6914, #D4AF37);
+  background-size: 300% 300%;
+  animation: borderRotate 4s ease infinite;
+}
+
+/* Skeleton pulse */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.skeleton {
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+  background: rgba(255,255,255,0.06);
+  border-radius: 6px;
+}
+
+/* === SPECTACULAR PREMIUM LAYER === */
+
+/* Animated mesh gradient background — drifts subtly */
+@keyframes meshShift {
+  0%, 100% { background-position: 0% 0%, 100% 100%, 50% 50%; }
+  50% { background-position: 100% 50%, 0% 50%, 50% 0%; }
+}
+
+.mesh-bg {
+  position: relative;
+  background-color: #07070e;
+  background-image:
+    radial-gradient(at 18% 22%, rgba(212, 175, 55, 0.10) 0px, transparent 50%),
+    radial-gradient(at 82% 78%, rgba(168, 85, 247, 0.06) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(6, 182, 212, 0.05) 0px, transparent 50%);
+  background-size: 200% 200%, 200% 200%, 200% 200%;
+  animation: meshShift 18s ease-in-out infinite;
+}
+
+/* Noise texture overlay — adds organic grain */
+.noise-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Sparkline draw-in stroke animation */
+@keyframes drawLine {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+
+.sparkline-draw {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: drawLine 1.6s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+/* Value rise-in animation */
+@keyframes valueRise {
+  from { opacity: 0; transform: translateY(8px); filter: blur(4px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+.value-rise {
+  animation: valueRise 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Glow halos — color matched per stat card accent */
+.glow-gold {
+  text-shadow: 0 0 18px rgba(212, 175, 55, 0.45), 0 0 36px rgba(212, 175, 55, 0.15);
+}
+.glow-cyan {
+  text-shadow: 0 0 18px rgba(6, 182, 212, 0.45), 0 0 36px rgba(6, 182, 212, 0.15);
+}
+.glow-emerald {
+  text-shadow: 0 0 18px rgba(16, 185, 129, 0.45), 0 0 36px rgba(16, 185, 129, 0.15);
+}
+.glow-pink {
+  text-shadow: 0 0 18px rgba(236, 72, 153, 0.45), 0 0 36px rgba(236, 72, 153, 0.15);
+}
+
+/* Premium card lift on hover */
+.card-lift {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease, border-color 0.3s ease;
+}
+.card-lift:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 20px 40px -12px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Spotlight cursor follower — uses --mx/--my CSS variables */
+.spotlight-cursor {
+  position: relative;
+  overflow: hidden;
+}
+.spotlight-cursor::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    600px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(212, 175, 55, 0.12),
+    transparent 40%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+.spotlight-cursor:hover::before {
+  opacity: 1;
+}
+
+/* Conic gradient ring — for badges/avatars */
+@keyframes conicSpin {
+  to { transform: rotate(360deg); }
+}
+.conic-ring {
+  position: relative;
+}
+.conic-ring::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: conic-gradient(from 0deg, #D4AF37, #FFD700, #B8860B, #D4AF37);
+  animation: conicSpin 6s linear infinite;
+  z-index: -1;
+}
+
+/* Subtle ambient pulse for accent dots */
+@keyframes ambientGlow {
+  0%, 100% { box-shadow: 0 0 8px currentColor, 0 0 16px currentColor; opacity: 1; }
+  50% { box-shadow: 0 0 14px currentColor, 0 0 28px currentColor; opacity: 0.85; }
+}
+.ambient-glow {
+  animation: ambientGlow 2.5s ease-in-out infinite;
 }
 
 /* ConnectButton overrides */
