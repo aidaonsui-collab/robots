@@ -373,6 +373,15 @@ export default function CreateTokenPage() {
         return alert('AIDA contract not yet deployed. Please deploy moonbags_aida first.')
       }
 
+      // For AIDA pairs, initialize the staking pool so new tokens self-stake.
+      if (isAidaPair) {
+        tx2.moveCall({
+          target: `${contract.packageId}::moonbags_stake::initialize_staking_pool`,
+          typeArguments: [tokenType],
+          arguments: [tx2.object(contract.stakeConfig), tx2.object(SUI_CLOCK)],
+        })
+      }
+
       // Create pool with metadata (moonbags for SUI, moonbags_aida for AIDA).
       tx2.moveCall({
         target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
@@ -838,7 +847,7 @@ export default function CreateTokenPage() {
             )}
 
             <p className="text-xs text-gray-600 text-center">
-              0.01 SUI creation fee · fees: 15% platform · 25% creator · 20% AIDA stakers
+              0.01 SUI creation fee · fees: 40% platform · 30% creator · 30% AIDA stakers
             </p>
           </div>
         )}

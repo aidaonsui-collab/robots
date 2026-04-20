@@ -29,6 +29,7 @@ import { AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
 const V11_PKG_ID = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
 import { Gift } from 'lucide-react'
 import PriceChart, { PricePoint } from '@/components/coin/PriceChart'
+import PerTokenStakePanel from '@/components/coin/PerTokenStakePanel'
 import TradingViewChart from '@/components/coin/TradingViewChart'
 import { VideoEmbed } from '@/components/VideoEmbed'
 import { formatNumber, formatSui } from '@/lib/utils'
@@ -1099,7 +1100,7 @@ function ChatTab({ connectedAddress, poolId }: { connectedAddress?: string; pool
 // ============================================
 // TAB: TXNS
 // ============================================
-function TxnsTab({ trades, coinType, poolId, creatorAddress }: { trades: TradeRow[]; coinType?: string; poolId?: string; creatorAddress?: string }) {
+function TxnsTab({ trades, coinType, poolId, creatorAddress, pairType }: { trades: TradeRow[]; coinType?: string; poolId?: string; creatorAddress?: string; pairType?: string }) {
   const [txFilter, setTxFilter] = useState<'all' | 'buy' | 'sell'>('all')
   const [suinsNames, setSuinsNames] = useState<Record<string, string>>({})
   const [page, setPage] = useState(0)
@@ -1178,8 +1179,8 @@ function TxnsTab({ trades, coinType, poolId, creatorAddress }: { trades: TradeRo
 
               {/* SUI */}
               <div className="text-right">
-                <p className="text-sm font-semibold text-gray-200">{trade.suiAmount.toFixed(2)}</p>
-                <p className="text-[10px] text-gray-600">SUI</p>
+                <p className="text-sm font-semibold text-gray-200">{trade.suiAmount.toFixed(2)} {pairType}</p>
+                <p className="text-[10px] text-gray-600">{pairType}</p>
               </div>
 
               {/* Tokens */}
@@ -1256,87 +1257,9 @@ function TxnsTab({ trades, coinType, poolId, creatorAddress }: { trades: TradeRo
 // ============================================
 // TAB: STAKE
 // ============================================
-function StakeTab({ token }: { token: typeof MOCK_TOKEN }) {
-  const { isConnected: connected, currentWallet } = useCurrentWallet()
-  const address = currentWallet?. accounts?.[0]?. address
-  const [stakeMode, setStakeMode] = useState<'stake' | 'unstake'>('stake')
-  const [stakeAmount, setStakeAmount] = useState('')
-
-  return (
-    <div className="fade-in space-y-4">
-      {/* Coming soon banner */}
-      <div className="bg-gradient-to-r from-[#D4AF37]/20 via-[#FFD700]/10 to-[#B8860B]/10 border border-[#D4AF37]/20 rounded-xl p-4 flex items-center justify-between">
-        <div>
-          <p className="text-xs text-gray-400 mb-1">Per-Token Staking</p>
-          <p className="text-2xl font-bold gradient-text">Coming Soon</p>
-          <p className="text-xs text-gray-500 mt-1">Stake {token.symbol} to earn trading fee rewards</p>
-        </div>
-        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#FFD700] flex items-center justify-center">
-          <Flame className="w-7 h-7 text-white" />
-        </div>
-      </div>
-
-      {/* Stake / Unstake */}
-      <div className="bg-[#0f0f17] rounded-xl border border-gray-800/50 p-5">
-        <div className="flex gap-2 p-1 bg-[#14142a] rounded-xl border border-white/5 mb-4">
-          <button
-            onClick={() => setStakeMode('stake')}
-            className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${stakeMode === 'stake' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/25' : 'text-gray-400 hover:text-gray-200'}`}
-          >
-            Stake
-          </button>
-          <button
-            onClick={() => setStakeMode('unstake')}
-            className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${stakeMode === 'unstake' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
-          >
-            Unstake
-          </button>
-        </div>
-
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs text-gray-500 uppercase tracking-wider">Amount ({token.symbol})</label>
-            <button className="text-xs text-[#D4AF37] hover:text-[#D4AF37] transition-colors">Max</button>
-          </div>
-          <input
-            type="number"
-            value={stakeAmount}
-            onChange={(e) => setStakeAmount(e.target.value)}
-            placeholder="0.00"
-            className="w-full bg-[#14142a] border border-gray-700/50 rounded-xl py-3 px-4 text-lg font-bold outline-none focus:border-purple-500/50 transition-colors placeholder:text-gray-700"
-          />
-        </div>
-
-        <button
-          className="w-full py-4 rounded-xl font-bold text-base bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-500 hover:to-pink-400 text-white shadow-lg shadow-purple-500/25 transition-all disabled:opacity-40"
-          disabled={!stakeAmount || parseFloat(stakeAmount) <= 0 || !connected}
-        >
-          {!connected ? (
-            <span className="flex items-center justify-center gap-2"><Wallet className="w-4 h-4" /> Connect Wallet</span>
-          ) : (
-            `${stakeMode === 'stake' ? '🔒 Stake' : '🔓 Unstake'} ${token.symbol}`
-          )}
-        </button>
-
-        <p className="text-[11px] text-gray-600 text-center mt-3">
-          30% of trading fees distributed to AIDA stakers
-        </p>
-      </div>
-
-      {/* How it works */}
-      <div className="bg-[#0f0f17] rounded-xl border border-gray-800/50 p-4">
-        <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
-          <Info className="w-4 h-4 text-[#D4AF37]" /> How Staking Works
-        </h4>
-        <div className="space-y-2 text-xs text-gray-500">
-          <div className="flex items-start gap-2"><Zap className="w-3.5 h-3.5 text-yellow-400 mt-0.5 flex-shrink-0" /><span>Stake AIDA to earn a share of 30% of all trading fees</span></div>
-          <div className="flex items-start gap-2"><Zap className="w-3.5 h-3.5 text-yellow-400 mt-0.5 flex-shrink-0" /><span>Rewards are paid in SUI and claimable at any time</span></div>
-          <div className="flex items-start gap-2"><Zap className="w-3.5 h-3.5 text-yellow-400 mt-0.5 flex-shrink-0" /><span>No lock-up period — unstake whenever you want</span></div>
-          <div className="flex items-start gap-2"><Zap className="w-3.5 h-3.5 text-yellow-400 mt-0.5 flex-shrink-0" /><span>APR fluctuates with trading volume</span></div>
-        </div>
-      </div>
-    </div>
-  )
+function StakeTab({ token, poolData }: { token: typeof MOCK_TOKEN, poolData: PoolToken | null }) {
+  if (!poolData) return <div className="bg-[#0f0f17] border border-gray-800/60 rounded-2xl p-6"><p className="text-gray-400 text-sm">Loading…</p></div>
+  return <PerTokenStakePanel coinType={poolData.coinType} symbol={token.symbol} moonbagsPackageId={poolData.moonbagsPackageId} />
 }
 
 // ============================================
@@ -1729,7 +1652,7 @@ export default function CoinPage() {
 
               {/* Tab content */}
               <div className={activeTab === 'trade' ? '' : 'p-5'}>
-                {activeTab === 'txns' && <TxnsTab trades={trades} coinType={poolData?.coinType} poolId={poolData?.poolId} creatorAddress={poolData?.creator} />}
+                {activeTab === 'txns' && <TxnsTab trades={trades} coinType={poolData?.coinType} poolId={poolData?.poolId} creatorAddress={poolData?.creator} pairType={pairType} />}
                 {activeTab === 'trade' && (
                   <div className="p-5">
                     <TradeTab token={token} poolData={poolData} pairType={pairType} onTradeSuccess={handleTradeSuccess} />
@@ -1737,7 +1660,7 @@ export default function CoinPage() {
                 )}
                 {activeTab === 'info' && <InfoTab token={token} coinType={poolData?.coinType} poolId={poolData?.poolId} creatorAddress={poolData?.creator} connectedAddress={connectedAddress} moonbagsPackageId={poolData?.moonbagsPackageId} />}
                 {activeTab === 'chat' && <ChatTab connectedAddress={connectedAddress} poolId={poolData?.poolId} />}
-                {activeTab === 'stake' && <StakeTab token={token} />}
+                {activeTab === 'stake' && <StakeTab token={token} poolData={poolData} />}
                 {activeTab === 'earnings' && (
                   <div className="fade-in grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Revenue Distribution */}
