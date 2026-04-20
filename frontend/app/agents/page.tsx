@@ -7,6 +7,7 @@ import { Search, Sparkles, TrendingUp, Clock, Zap, Grid3x3, LayoutGrid, Plus, Ac
 import TokenCardPremium from '@/components/TokenCardPremium'
 import { motion } from 'framer-motion'
 import { fetchAllPoolTokens, PoolToken } from '@/lib/tokens'
+import { type PairToken } from '@/lib/contracts_aida'
 
 type ViewMode = 'grid' | 'large'
 type FilterType = 'all' | 'ai-agents' | 'trending' | 'new' | 'graduating'
@@ -27,6 +28,7 @@ interface MyAgent {
   volume24h?: number
   trades24h?: number
   earnings?: number
+  pairType?: PairToken
 }
 
 export default function AgentsPage() {
@@ -77,8 +79,9 @@ export default function AgentsPage() {
                 volume24h: poolData.volume24h || 0,
                 trades24h: poolData.trades?.length || 0,
                 earnings: (poolData.volume24h || 0) * 0.008,
+                pairType: (poolData.pairType as PairToken) || 'SUI',
               }
-            } catch { return { ...agent, marketCap: 0, volume24h: 0, trades24h: 0, earnings: 0 } }
+            } catch { return { ...agent, marketCap: 0, volume24h: 0, trades24h: 0, earnings: 0, pairType: 'SUI' as PairToken } }
           })
         )
         setMyAgents(withData)
@@ -345,7 +348,9 @@ export default function AgentsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredMyAgents.map((agent, i) => (
+              {filteredMyAgents.map((agent, i) => {
+                const pair = agent.pairType || 'SUI'
+                return (
                 <motion.div
                   key={agent.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -364,7 +369,18 @@ export default function AgentsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-white text-lg truncate group-hover:text-[#D4AF37] transition-colors">{agent.name}</h3>
-                      <p className="text-sm text-gray-400">${agent.symbol}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-400">${agent.symbol}</p>
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide border ${
+                            pair === 'AIDA'
+                              ? 'bg-[#D4AF37]/20 text-[#D4AF37] border-[#D4AF37]/40'
+                              : 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                          }`}
+                        >
+                          {pair}
+                        </span>
+                      </div>
                     </div>
                     <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
                       agent.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' :
@@ -383,12 +399,12 @@ export default function AgentsPage() {
                     </div>
                     <div className="bg-white/5 rounded-lg p-3">
                       <div className="text-xs text-gray-500 mb-1">24h Volume</div>
-                      <div className="text-sm font-bold text-white">{agent.volume24h ? agent.volume24h.toFixed(1) + ' SUI' : '—'}</div>
+                      <div className="text-sm font-bold text-white">{agent.volume24h ? `${agent.volume24h.toFixed(1)} ${pair}` : '—'}</div>
                     </div>
                   </div>
                   <div className="bg-gradient-to-r from-[#D4AF37]/10 to-[#FFD700]/10 border border-[#D4AF37]/20 rounded-lg p-3">
                     <div className="text-xs text-gray-400 mb-1">Your Earnings</div>
-                    <div className="text-lg font-bold text-[#D4AF37]">{agent.earnings ? agent.earnings.toFixed(3) + ' SUI' : '0.000 SUI'}</div>
+                    <div className="text-lg font-bold text-[#D4AF37]">{agent.earnings ? `${agent.earnings.toFixed(3)} ${pair}` : `0.000 ${pair}`}</div>
                   </div>
                   <div className="flex gap-2 mt-4">
                     <button
@@ -405,7 +421,7 @@ export default function AgentsPage() {
                     </button>
                   </div>
                 </motion.div>
-              ))}
+              )})}
             </div>
           )
         )}
