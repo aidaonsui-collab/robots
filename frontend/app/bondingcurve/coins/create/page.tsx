@@ -91,7 +91,7 @@ export default function CreateTokenPage() {
   const [targetRaise, setTargetRaise] = useState('2000')
   const [pairType, setPairType] = useState<PairType>('SUI')
 
-  const MIN_AIDA = 10_000_000
+  const MIN_AIDA = 20_000_000
 
   useEffect(() => {
     if (pairType === 'AIDA' && parseFloat(targetRaise) < MIN_AIDA) {
