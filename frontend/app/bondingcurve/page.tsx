@@ -8,6 +8,7 @@ import TokenCard, { SpotlightCard } from '@/components/TokenCard'
 import { shortenAddress } from '@/lib/utils'
 import { fetchPoolTrades, PoolToken } from '@/lib/tokens'
 import { type PresaleToken } from '@/lib/presale'
+import { getPairType, type PairToken } from '@/lib/contracts_aida'
 
 type FilterType = 'all' | 'new' | 'featured' | 'trending' | 'graduating'
 type SortType = 'marketcap' | 'newest' | 'progress' | 'volume'
@@ -104,7 +105,7 @@ export default function BondingCurvePage() {
         })
       }).then(r => r.json()).then(res => res?.result?.data ?? [])
 
-    Promise.all([fetchTradeEvents(LEGACY_ORIGIN_PKG), fetchTradeEvents(V11_PKG), fetchTradeEvents(V12_PKG)])
+    Promise.all([fetchTradeEvents(LEGACY_ORIGIN_PKG), fetchTradeEvents(V11_PKG), fetchTradeEvents(V12_PKG), fetchTradeEvents('0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8')])
       .then(([legacyEvents, v11Events, v12Events]) => {
         const allEvents = [...legacyEvents, ...v11Events, ...v12Events]
         const totalFeeMist = allEvents.reduce((sum: number, e: any) => sum + Number(e.parsedJson?.fee ?? 0), 0)
@@ -219,15 +220,15 @@ export default function BondingCurvePage() {
   }
 
   const totalSuiTraded = realTokens.reduce((s, t) => {
-  const isAida = t.pairType === 'AIDA' || (t as any).pairToken === 'AIDA'
-  const amt = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
-  return isAida ? s : s + amt
-}, 0)
-const totalAidaTraded = realTokens.reduce((s, t) => {
-  const isAida = t.pairType === 'AIDA' || (t as any).pairToken === 'AIDA'
-  const amt = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
-  return isAida ? s + amt : s
-}, 0)
+    const isAida = (t as any).pairToken === 'AIDA' || t.pairType === 'AIDA'
+    const amt = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
+    return isAida ? s : s + amt
+  }, 0)
+  const totalAidaTraded = realTokens.reduce((s, t) => {
+    const isAida = (t as any).pairToken === 'AIDA' || t.pairType === 'AIDA'
+    const amt = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
+    return isAida ? s + amt : s
+  }, 0)
 
   // Sparkline data generators for stat cards
   const genSparkline = (base: number, volatility: number, points = 30) =>
@@ -244,19 +245,17 @@ const totalAidaTraded = realTokens.reduce((s, t) => {
             <div className="bg-[#0d0f1a] rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.12] transition-colors">
               <div className="relative z-10">
                 <p className="text-xs text-gray-500 font-medium tracking-wide uppercase mb-3">Total Volume</p>
-                <div className="space-y-0.5 mb-2">
-                  <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalSuiTraded.toFixed(2)} SUI</p>
-                  <p className="text-lg font-semibold text-[#D4AF37] tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalAidaTraded.toLocaleString(undefined, { maximumFractionDigits: 0 })} AIDA</p>
-                </div>
+                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalSuiTraded.toFixed(2)} SUI</p>
+                <p className="text-sm font-semibold text-[#D4AF37]">{totalAidaTraded.toLocaleString(undefined, { maximumFractionDigits: 0 })} AIDA</p>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ Volume</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ SUI Raised</span>
                   <span className="text-[10px] text-gray-600">All time</span>
                 </div>
               </div>
               <div className="mt-4 -mx-5 -mb-5">
                 <svg viewBox="0 0 200 64" className="w-full" style={{ height: 64 }} preserveAspectRatio="none">
                   <defs><linearGradient id="sv" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#D4AF37" stopOpacity="0.3"/><stop offset="100%" stopColor="#D4AF37" stopOpacity="0.02"/></linearGradient></defs>
-                  {(() => { const d = genSparkline((totalSuiTraded + totalAidaTraded / 1_000_000) || 100, 30); const h = 64; const mx = Math.max(...d); const mn = Math.min(...d); const rg = mx - mn || 1; const pts = d.map((v: number, i: number) => ({ x: (i / (d.length - 1)) * 200, y: h - ((v - mn) / rg) * (h * 0.85) - h * 0.05 })); const line = pts.map((p: {x: number; y: number}, i: number) => (i === 0 ? `M${p.x},${p.y}` : `L${p.x},${p.y}`)).join(' '); return (<><path d={`${line} L200,${h} L0,${h} Z`} fill="url(#sv)"/><path d={line} fill="none" stroke="#D4AF37" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>); })()}
+                  {(() => { const d = genSparkline(totalSuiTraded + totalAidaTraded / 1_000_000 || 100, 30); const h = 64; const mx = Math.max(...d); const mn = Math.min(...d); const rg = mx - mn || 1; const pts = d.map((v: number, i: number) => ({ x: (i / (d.length - 1)) * 200, y: h - ((v - mn) / rg) * (h * 0.85) - h * 0.05 })); const line = pts.map((p: {x: number; y: number}, i: number) => (i === 0 ? `M${p.x},${p.y}` : `L${p.x},${p.y}`)).join(' '); return (<><path d={`${line} L200,${h} L0,${h} Z`} fill="url(#sv)"/><path d={line} fill="none" stroke="#D4AF37" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>); })()}
                 </svg>
               </div>
             </div>
@@ -507,6 +506,9 @@ const totalAidaTraded = realTokens.reduce((s, t) => {
                       liveStreamUrl: spotlightToken.streamUrl,
                       coinType: spotlightToken.coinType,
                       isAiLaunched: spotlightToken.isAiLaunched,
+                      moonbagsPackageId: (spotlightToken as any).moonbagsPackageId,
+                      pairType: (spotlightToken as any).pairType ?? getPairType((spotlightToken as any).moonbagsPackageId),
+                      isCompleted: (spotlightToken as any).isCompleted,
                     }}
                     onClick={() => router.push(`/bondingcurve/coins/${spotlightToken.coinType}`)}
                   />
@@ -535,6 +537,9 @@ const totalAidaTraded = realTokens.reduce((s, t) => {
                           liveStreamUrl: poolToken.streamUrl,
                           coinType: poolToken.coinType,
                           isAiLaunched: poolToken.isAiLaunched,
+                          moonbagsPackageId: poolToken.moonbagsPackageId,
+                          pairType: poolToken.pairType ?? getPairType(poolToken.moonbagsPackageId),
+                          isCompleted: poolToken.isCompleted,
                         }}
                         onClick={() => router.push(`/bondingcurve/coins/${poolToken.coinType}`)}
                       />
