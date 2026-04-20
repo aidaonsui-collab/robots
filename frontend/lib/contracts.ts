@@ -157,16 +157,21 @@ export const QUOTE_COIN  = '0x2::sui::SUI'
 export const ODYSSEY_CONTRACT = MOONBAGS_CONTRACT
 
 // ── Bonding curve constants (from on-chain Configuration) ───
-// Verified on-chain from v11 Configuration 0x74b01e1b...
-// Updated 2026-04-10 via update_config TX to match Moonbags parity:
-//   V_t at creation = R²/(R-I) = 800M²/600M = 1,066,666,667 (matches Moonbags)
-//   V_s at creation = threshold × I/(R-I) = threshold/3 (matches Moonbags)
-// See scripts/update-curve-depth-v11.ts for the on-chain update call.
+// Verified on-chain from V12 Configuration 0x74b01e1b…
+// Updated 2026-04-20 via scripts/halve-supply.ts:
+//   V12  tx: Dp1KNiwDbEj5HqAum8YJy4gonQfQtG1YaX9MdFLD8aZg
+//   AIDA tx: 4kjoWK5Vf5varnWbUFKtpc4uLBrTqFcQndhKJ7K8pN3j
+// Unified V12 and AIDA configs to mint 800M total per new pool (2R = 800M).
+// Ratio R / I preserved at 4:1, so:
+//   V_t at creation = R²/(R-I) = 400M²/300M = 533,333,333
+//   V_s at creation = threshold × I/(R-I) = threshold/3 (unchanged)
+// Existing tokens keep their original minted supply (1.6B for old V12 pools,
+// 8.53B for old AIDA pools).
 export const CURVE_CONFIG = {
-  initialVirtualTokenReserves: BigInt(200_000_000_000_000),   // 200M tokens (6 decimals)
-  remainTokenReserves:         BigInt(800_000_000_000_000),   // 800M tokens (4× initial, Moonbags parity)
+  initialVirtualTokenReserves: BigInt(100_000_000_000_000),   // 100M tokens (6 decimals)
+  remainTokenReserves:         BigInt(400_000_000_000_000),   // 400M tokens (4× initial) — mints 2R = 800M per pool
   defaultThresholdMist:        BigInt(2_000_000_000_000),     // 2000 SUI graduation (default)
-  minimumThresholdMist:        BigInt(1_000_000_000_000),     // 1000 SUI minimum (v11 enforcement)
+  minimumThresholdMist:        BigInt(1_000_000_000_000),     // 1000 SUI minimum (contract-enforced)
   poolCreationFeeMist:         BigInt(10_000_000),            // 0.01 SUI
   platformFeeBps:              200,                           // 2% (200/10000)
   tokenDecimals:               6,

@@ -18,12 +18,13 @@ import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 // Formula: tokens = VIRTUAL_TOKEN_RESERVES * sui_mist / (VIRTUAL_SUI_START + sui_mist)
 const POOL_CREATION_FEE_MIST = BigInt(10_000_000);              // 0.01 SUI
 type PairType = 'SUI' | 'AIDA';
-// Pool virtual reserves (from v11 on-chain config 0x74b01e1b, updated 2026-04-10):
-//   I = initial_virtual_token_reserves =   200_000_000_000_000 (config field)
-//   R = remain_token_reserves          =   800_000_000_000_000 (config field, 4×I)
-//   virtual_token at pool creation     = R²/(R-I) = 1,066,666,666,666,666 (matches Moonbags V_t ≈ 1.067B)
+// Pool virtual reserves (from V12 + AIDA configs, both unified 2026-04-20):
+//   I = initial_virtual_token_reserves =   100_000_000_000_000 (config field)
+//   R = remain_token_reserves          =   400_000_000_000_000 (config field, 4×I)
+//   virtual_token at pool creation     = R²/(R-I) = 533,333,333,333,333 (~533M)
 //   virtual_sui at pool creation       = threshold * I/(R-I) = threshold/3
-const POOL_VIRTUAL_TOKEN     = BigInt(1_066_666_666_666_666)   // R²/(R-I) with Moonbags-parity config
+//   total minted per pool              = 2R = 800M tokens
+const POOL_VIRTUAL_TOKEN     = BigInt(533_333_333_333_333)   // R²/(R-I) with unified 800M-supply config
 import { getCoinModuleBytes, extractPublishResult } from '@/lib/coinPublish'
 
 const DEFAULT_THRESHOLD_MIST = BigInt(3_000_000_000)           // 3 SUI default graduation threshold
