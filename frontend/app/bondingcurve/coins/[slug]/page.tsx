@@ -684,21 +684,6 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
         suiCoin = split
       }
 
-      // Diagnostic — open devtools console before signing to inspect the
-      // package/config routing picked for this pool.
-      console.log('[buy] routing', {
-        coinType: poolData.coinType,
-        poolId: poolData.poolId,
-        moonbagsPackageId: poolData.moonbagsPackageId,
-        pairType,
-        isV11Pool,
-        isV12Pool,
-        isStrippedBuy,
-        mbagsContractPackageId: mbagsContract.packageId,
-        mbagsContractConfiguration: mbagsContract.configuration,
-        mbagsContractLockConfig: mbagsContract.lockConfig,
-      })
-
       if (isStrippedBuy) {
         // v11 and v12: stripped Cetus/Turbos deps, 6-arg buy_exact_in_with_lock.
         // v11 is a fresh publish like v12 — both share the same configuration/lockConfig objects.

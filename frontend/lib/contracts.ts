@@ -87,6 +87,13 @@ export function getMoonbagsContractForPackage(packageId?: string | null): Moonba
   if (packageId === MOONBAGS_AIDA_CONTRACT.packageId) return MOONBAGS_AIDA_CONTRACT
   if (!packageId) return MOONBAGS_CONTRACT_V12
   const normalized = packageId.startsWith('0x') ? packageId.toLowerCase() : `0x${packageId.toLowerCase()}`
+  // V11 is a fresh publish, not an upgrade of v7/legacy. Its pools use the
+  // SAME Configuration / lockConfig / stakeConfig shared objects as V12, so
+  // route V11 pool calls to the V12 contract bundle. (V11's packageId still
+  // appears in MOONBAGS_LEGACY_PACKAGE_IDS so the event-query fan-out covers
+  // it — the shared-config routing is a separate concern from event discovery.)
+  const V11_PKG_ID = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
+  if (normalized === V11_PKG_ID) return MOONBAGS_CONTRACT_V12
   if (MOONBAGS_LEGACY_PACKAGE_IDS.some(p => p.toLowerCase() === normalized)) {
     return MOONBAGS_CONTRACT_LEGACY
   }
