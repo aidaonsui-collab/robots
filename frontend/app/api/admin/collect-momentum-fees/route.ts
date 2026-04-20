@@ -44,18 +44,16 @@ export async function GET(req: Request) {
   const keypair = getAdminKeypair()
   const adminAddress = keypair.getPublicKey().toSuiAddress()
 
-  // Pool type = Pool<HERO,AIDA> → type args [HERO, AIDA]
-  // Try type args in both orders since we don't know the exact on-chain signature
-  const typeArgs = [HERO_TYPE, AIDA_TYPE]
-
   try {
     const tx = new Transaction()
     tx.setSender(adminAddress)
     tx.setGasBudget(100_000_000)
 
-    tx.moveCall({
+    // collect::fee returns (Coin<X>, Coin<Y>) — must transfer or drop them
+    // Use tx.transferObjects to send both fee coins to the admin
+    const [coinX, coinY] = tx.moveCall({
       target: `${MOMENTUM_PACKAGE}::collect::fee`,
-      typeArguments: typeArgs,
+      typeArguments: [HERO_TYPE, AIDA_TYPE],
       arguments: [
         tx.object(POOL_ID),
         tx.object(POSITION_ID),
@@ -64,16 +62,28 @@ export async function GET(req: Request) {
       ],
     })
 
+    tx.transferObjects([coinX, coinY], tx.pure.address(adminAddress))
+
     const result = await client.signAndExecuteTransaction({
       transaction: tx,
       signer: keypair,
-      options: { showEffects: true },
+      options: { showEffects: true, showObjectChanges: true },
     })
 
     const ok = result.effects?.status?.status === 'success'
+
+    // Extract amounts collected
+    let amounts = null
+    if (ok && result.objectChanges) {
+      const created = result.objectChanges.filter((c: any) => c.type === 'created')
+      const transferred = result.objectChanges.filter((c: any) => c.type === 'mutated' && c.objectType?.includes('Coin'))
+      amounts = { created: created.length, transferred: transferred.length }
+    }
+
     return NextResponse.json({
       success: ok,
       digest: result.digest,
+      amounts,
       error: ok ? undefined : JSON.stringify(result.effects?.status),
     })
   } catch (e: any) {
