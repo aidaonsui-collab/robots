@@ -37,6 +37,7 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
+    "ts-node": "^10.9.2",
     "@babel/plugin-transform-class-properties": "^7.28.6",
     "@babel/plugin-transform-private-methods": "^7.28.6",
     "@types/node": "^22.0.0",

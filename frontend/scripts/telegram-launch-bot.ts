@@ -31,6 +31,8 @@ const PRICE_CACHE_TTL = 5 * 60 * 1000 // 5 min
 const PKG_LEGACY = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
 const PKG_V11 = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
 const PKG_V12 = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e'
+// AIDA-paired bonding curve (origin) — emits its own moonbags::* and moonbags_stake::* events
+const PKG_AIDA = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
 
 // Olympus presale package (v8 — 32-field struct)
 const PKG_PRESALE = '0x4c9f2fe6a524873adea66ff6f31d6caba0df10d10ffd8b28e99d0b8e26eabc76'
@@ -631,14 +633,15 @@ async function pollStaking(): Promise<void> {
   if (isPollingStaking) return
   isPollingStaking = true
   try {
-    const [stakeLegacy, stakeV11, stakeV12] = await Promise.all([
+    const [stakeLegacy, stakeV11, stakeV12, stakeAida] = await Promise.all([
       queryEvents(`${PKG_LEGACY}::moonbags_stake::StakeEvent`, 20),
       queryEvents(`${PKG_V11}::moonbags_stake::StakeEvent`, 20),
       queryEvents(`${PKG_V12}::moonbags_stake::StakeEvent`, 20),
+      queryEvents(`${PKG_AIDA}::moonbags_stake::StakeEvent`, 20),
     ])
 
     // Merge and aggressively deduplicate by txDigest BEFORE processing
-    const allRaw = [...stakeLegacy, ...stakeV11, ...stakeV12]
+    const allRaw = [...stakeLegacy, ...stakeV11, ...stakeV12, ...stakeAida]
     const txDigestSeen = new Set<string>()
     const allStakes: any[] = []
     for (const event of allRaw) {
