@@ -44,6 +44,16 @@ async function markProcessed(eventId: string): Promise<void> {
   })
 }
 
+async function unmarkProcessed(eventId: string): Promise<void> {
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (!redisUrl || !redisToken) return
+  await fetch(`${redisUrl}/srem/${PROCESSED_KEY}/${encodeURIComponent(eventId)}`, {
+    headers: { Authorization: `Bearer ${redisToken}` },
+    cache: 'no-store',
+  })
+}
+
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
@@ -57,8 +67,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'MOMENTUM_PACKAGE_ID not configured' }, { status: 503 })
   }
 
+  // Optional filters:
+  //   ?force=true            — re-process ALL events regardless of Redis state
+  //   ?token=<tokenType>     — only process events whose token_address matches
+  //                           AND clear them from Redis before processing
+  const url = new URL(req.url)
+  const force = url.searchParams.get('force') === 'true'
+  const tokenFilter = url.searchParams.get('token')
+
   const results: any[] = []
-  const processed = await getProcessedSet()
+  const processed = force ? new Set<string>() : await getProcessedSet()
   const markedThisRun = new Set<string>()
   const isProcessed = (k: string) => processed.has(k) || markedThisRun.has(k)
   const markAndTrack = async (k: string) => { markedThisRun.add(k); await markProcessed(k) }
@@ -72,8 +90,6 @@ export async function GET(req: Request) {
     for (const ev of events) {
       const evId = ev.id as any
       const eventId = `${evId?.txDigest}:${evId?.eventSeq ?? 0}`
-      if (isProcessed(eventId)) continue
-
       const parsed = ev.parsedJson
       if (!parsed) continue
 
@@ -81,6 +97,15 @@ export async function GET(req: Request) {
       const tokenType = parsed.token_address?.startsWith('0x')
         ? parsed.token_address
         : `0x${parsed.token_address}`
+
+      // Token filter: only process specific tokenType if requested, and
+      // unmark it from Redis first so the rest of the processing path proceeds.
+      if (tokenFilter) {
+        if (tokenType !== tokenFilter && tokenType !== normalizePkg(tokenFilter)) continue
+        await unmarkProcessed(eventId)
+      } else if (isProcessed(eventId)) {
+        continue
+      }
 
       if (aidaRaw === 0n) {
         console.warn(`[graduate] Event ${eventId} has zero AIDA amount — skipping`)
@@ -110,12 +135,14 @@ export async function GET(req: Request) {
         pool: poolResult,
       })
 
-      await markAndTrack(eventId)
-
-      if (!poolResult.success) {
-        console.error(`[graduate] Pool creation failed: ${poolResult.error}`)
-      } else {
+      // Only mark processed on actual success — this lets failed graduations
+      // retry on the next cron run (or via ?force=true) instead of getting
+      // stuck in the processed set.
+      if (poolResult.success) {
+        await markAndTrack(eventId)
         console.log(`[graduate] Graduated! Pool: ${poolResult.poolId}`)
+      } else {
+        console.error(`[graduate] Pool creation failed: ${poolResult.error}`)
       }
     }
   } catch (e: any) {
@@ -128,4 +155,14 @@ export async function GET(req: Request) {
     results,
     timestamp: new Date().toISOString(),
   })
+}
+
+// Normalize a package prefix to 64 hex chars after 0x. Makes the ?token filter
+// robust against truncated/padded address forms.
+function normalizePkg(tokenType: string): string {
+  const parts = tokenType.split('::')
+  if (parts.length < 3) return tokenType
+  const addr = parts[0].startsWith('0x') ? parts[0] : `0x${parts[0]}`
+  parts[0] = addr.slice(0, 2) + addr.slice(2).padStart(64, '0')
+  return parts.join('::')
 }
