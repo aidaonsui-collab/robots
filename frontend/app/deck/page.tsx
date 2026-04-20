@@ -151,6 +151,12 @@ function Slide({ s, n }: { s: typeof SLIDES[0]; n: number }) {
 
 export default function DeckPage() {
   return (
+    <style>{`
+      @media print {
+        body { background: #07070e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .slide { background: #07070e !important; }
+      }
+    `}</style>
     <div style={{ background: '#07070e', color: '#e2e8f0', fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif' }}>
       {SLIDES.map((s, i) => <Slide key={i} s={s} n={i + 1} />)}
     </div>
