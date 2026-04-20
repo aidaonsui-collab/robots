@@ -29,6 +29,7 @@ import { AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
 const V11_PKG_ID = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
 import { Gift } from 'lucide-react'
 import PriceChart, { PricePoint } from '@/components/coin/PriceChart'
+import GraduatedTokenPanel from '@/components/coin/GraduatedTokenPanel'
 import PerTokenStakePanel from '@/components/coin/PerTokenStakePanel'
 import TradingViewChart from '@/components/coin/TradingViewChart'
 import { VideoEmbed } from '@/components/VideoEmbed'
@@ -561,6 +562,17 @@ function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, mo
 // TAB: TRADE (Buy/Sell full panel)
 // ============================================
 function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof MOCK_TOKEN, poolData: PoolToken | null, pairType: string, onTradeSuccess?: () => void }) {
+  if (poolData?.isCompleted) {
+    return (
+      <GraduatedTokenPanel
+        coinType={poolData.coinType}
+        symbol={token.symbol}
+        moonbagsPackageId={poolData.moonbagsPackageId}
+        poolId={poolData.poolId}
+      />
+    )
+  }
+
   const { isConnected: connected } = useCurrentWallet()
   const account = useCurrentAccount()
   const address = account?.address
