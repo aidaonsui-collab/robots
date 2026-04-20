@@ -784,11 +784,42 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
     signAndExecute(
       { transaction: tx },
       {
-        onSuccess: (result) => {
-          setTxSuccess(`Done! Digest: ${result.digest.slice(0, 10)}...`)
-          setAmount('')
-          // Refresh trade history after a few seconds so the new tx shows up
-          setTimeout(() => onTradeSuccess?.(), 3000)
+        onSuccess: async (result) => {
+          // `onSuccess` fires as soon as the tx is accepted by the network —
+          // Sui txs can still abort in Move execution and return a digest.
+          // Wait for finality and inspect effects.status before celebrating.
+          try {
+            const res = await suiClient.waitForTransaction({
+              digest: result.digest,
+              options: { showEffects: true },
+            })
+            const status = res.effects?.status
+            if (status?.status === 'success') {
+              setTxSuccess(`Done! Digest: ${result.digest.slice(0, 10)}...`)
+              setAmount('')
+              setTimeout(() => onTradeSuccess?.(), 3000)
+              return
+            }
+            // Move-level abort — surface a useful message instead of "success"
+            const raw = status?.error || 'Transaction aborted on-chain'
+            const abortMatch = raw.match(/MoveAbort\([^)]+\),\s*(\d+)\)/)
+            const abortCode = abortMatch ? Number(abortMatch[1]) : null
+            const friendly = (() => {
+              switch (abortCode) {
+                case 1: return 'Slippage exceeded — price moved before your trade landed. Increase slippage tolerance and try again.'
+                case 2: return 'Pool threshold not met for this action.'
+                case 3: return 'Pool contract is on an older version — please refresh and retry.'
+                case 4: return 'Pool has graduated to DEX — trade there instead of the bonding curve.'
+                case 5: return 'Insufficient balance for this trade (including the 2% fee).'
+                case 7: return 'Pool has not graduated yet — this action is only available post-graduation.'
+                default: return raw.length > 160 ? raw.slice(0, 160) + '…' : raw
+              }
+            })()
+            setTxError(friendly)
+          } catch (e: any) {
+            // If effects fetch fails, fall back to showing the digest with a warning
+            setTxError(`Could not confirm tx status (${result.digest.slice(0, 10)}…). Check SuiVision.`)
+          }
         },
         onError: (err: any) => {
           console.error('Trade error:', err)
