@@ -4,12 +4,6 @@ import { Transaction } from '@mysten/sui/transactions'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 
-// Claim accumulated Momentum DEX protocol fees for the HERO/AIDA pool.
-//
-// Usage:
-//   curl -H "Authorization: Bearer $CRON_SECRET" \
-//     "https://robots-teal.vercel.app/api/admin/collect-momentum-fees"
-
 export const dynamic = 'force-dynamic'
 
 const SUI_RPC = 'https://fullnode.mainnet.sui.io'
@@ -50,16 +44,18 @@ export async function GET(req: Request) {
   const keypair = getAdminKeypair()
   const adminAddress = keypair.getPublicKey().toSuiAddress()
 
-  // Pool type is Pool<HERO, AIDA> — type args must match: [HERO, AIDA]
+  // Pool type = Pool<HERO,AIDA> → type args [HERO, AIDA]
+  // Try type args in both orders since we don't know the exact on-chain signature
+  const typeArgs = [HERO_TYPE, AIDA_TYPE]
+
   try {
     const tx = new Transaction()
     tx.setSender(adminAddress)
     tx.setGasBudget(100_000_000)
 
-    // collect::fee(pool, position, clock, version) — 4 args
     tx.moveCall({
       target: `${MOMENTUM_PACKAGE}::collect::fee`,
-      typeArguments: [HERO_TYPE, AIDA_TYPE],
+      typeArguments: typeArgs,
       arguments: [
         tx.object(POOL_ID),
         tx.object(POSITION_ID),
@@ -71,7 +67,7 @@ export async function GET(req: Request) {
     const result = await client.signAndExecuteTransaction({
       transaction: tx,
       signer: keypair,
-      options: { showEffects: true, showObjectChanges: true },
+      options: { showEffects: true },
     })
 
     const ok = result.effects?.status?.status === 'success'
@@ -81,7 +77,6 @@ export async function GET(req: Request) {
       error: ok ? undefined : JSON.stringify(result.effects?.status),
     })
   } catch (e: any) {
-    console.error(`[collect-momentum-fees] ${e.message}`)
     return NextResponse.json({ success: false, error: e.message }, { status: 500 })
   }
 }
