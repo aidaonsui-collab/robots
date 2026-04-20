@@ -18,6 +18,7 @@ interface ActivityItem {
   address: string
   amount: number
   token: string
+  pair: PairToken
   timestampMs: number
 }
 
@@ -73,11 +74,13 @@ export default function BondingCurvePage() {
           ;(t as any).volumeAll = volAll
           t.priceChange24h = priceChange24h
 
+          const tokenPair: PairToken = t.pairType ?? (t as any).pairToken ?? getPairType(t.moonbagsPackageId ?? (t as any).moonbagsPackageId)
           return trades.map(tr => ({
             type: tr.isBuy ? 'buy' as const : 'sell' as const,
             address: tr.user ? `${tr.user.slice(0, 6)}...${tr.user.slice(-4)}` : 'unknown',
             amount: tr.suiAmount,
             token: t.symbol,
+            pair: tokenPair,
             timestampMs: tr.timestampMs,
           }))
         }))
@@ -623,7 +626,7 @@ export default function BondingCurvePage() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs font-bold text-white tabular-nums">{tx.amount.toFixed(2)}</p>
-                      <p className="text-[10px] text-gray-600">SUI · {formatTimeAgo(tx.timestampMs)}</p>
+                      <p className="text-[10px] text-gray-600">{tx.pair} · {formatTimeAgo(tx.timestampMs)}</p>
                     </div>
                   </div>
                 ))}

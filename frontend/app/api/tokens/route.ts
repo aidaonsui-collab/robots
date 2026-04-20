@@ -247,12 +247,18 @@ export async function GET() {
           marketCap,
           totalSupply,
           realSuiSui,
+          realSuiRaised: realSuiSui,
+          threshold: thresholdSui,
           thresholdSui,
           progress,
           volume1h,
           isCompleted,
           createdAt: Number(meta.ts),
           creator: meta.created_by,
+          moonbagsPackageId: eventPackage,
+          // Canonical name used by PoolToken / TokenCard. Legacy `pairToken`
+          // kept for any older consumers that still read the old field.
+          pairType: pairToken,
           pairToken,
         }
       })
