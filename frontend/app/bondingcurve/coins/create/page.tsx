@@ -108,11 +108,17 @@ export default function CreateTokenPage() {
   const set = (field: string, value: string) =>
     setFormData(prev => ({ ...prev, [field]: value }))
 
-  // Pre-fill from agent creation flow (localStorage set by /agents/create)
+  // Pre-fill from agent creation flow (localStorage set by /agents/create).
+  // One-shot: consume the draft on first read so it doesn't repopulate forever
+  // if the user bails before publishing. The submit handler below also reads
+  // it (for the post-publish agent registration step), so we keep a copy in
+  // state instead of re-reading from storage.
   useEffect(() => {
     try {
       const pending = localStorage.getItem('pendingAgentCreation')
       if (!pending) return
+      localStorage.removeItem('pendingAgentCreation')
+      sessionStorage.setItem('pendingAgentCreation', pending)
       const data = JSON.parse(pending)
       setFormData(prev => ({
         ...prev,
@@ -465,9 +471,11 @@ export default function CreateTokenPage() {
       }
 
       setLaunched(true); setPoolId(newPoolId)
-      
-      // Check if this is an agent creation (from /agents/create redirect)
-      const pendingAgent = localStorage.getItem('pendingAgentCreation')
+
+      // Check if this is an agent creation (from /agents/create redirect).
+      // The pre-fill effect above moves the draft from localStorage to
+      // sessionStorage so it only survives the current tab/flow.
+      const pendingAgent = sessionStorage.getItem('pendingAgentCreation')
       if (pendingAgent) {
         try {
           const agentData = JSON.parse(pendingAgent)
@@ -501,7 +509,7 @@ export default function CreateTokenPage() {
           if (agentResponse.ok) {
             const { agent } = await agentResponse.json()
             console.log('✅ Agent registered:', agent)
-            localStorage.removeItem('pendingAgentCreation')
+            sessionStorage.removeItem('pendingAgentCreation')
             setStatus('🤖 Agent created successfully! Redirecting to dashboard...', 'success')
             setTimeout(() => router.push(`/my-agents/${agent.id}/dashboard`), 2500)
             return
