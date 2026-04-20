@@ -22,10 +22,6 @@ const HERO_TYPE = '0x9b23d1a041b7ca45e2f72e68f6221528b82dc6c40357101601f27e1bde8
 const POOL_ID     = '0x740de5bb3b03aa8eeb651cc3c6b751ba4f46f4a2d7b8307a8a9eac5d596ff55b'
 const POSITION_ID = '0xcfba0103313c26a4818ea3528d4791c3e80164c4c474f486db55b164f1e88eba'
 
-function normalizeType(t: string) {
-  return t.startsWith('0x') ? t : `0x${t}`
-}
-
 function getAdminKeypair(): Ed25519Keypair {
   const secret = process.env.ADMIN_WALLET_SECRET
   if (!secret) throw new Error('ADMIN_WALLET_SECRET not configured')
@@ -54,18 +50,16 @@ export async function GET(req: Request) {
   const keypair = getAdminKeypair()
   const adminAddress = keypair.getPublicKey().toSuiAddress()
 
-  // Type args must be BCS-sorted. AIDA < HERO lexicographically, so [AIDA, HERO].
-  const typeArgs = [normalizeType(AIDA_TYPE), normalizeType(HERO_TYPE)]
-
+  // Pool type is Pool<HERO, AIDA> — type args must match: [HERO, AIDA]
   try {
     const tx = new Transaction()
     tx.setSender(adminAddress)
     tx.setGasBudget(100_000_000)
 
-    // collect::fee(pool, position, clock, version) — 4 args (not 3!)
+    // collect::fee(pool, position, clock, version) — 4 args
     tx.moveCall({
       target: `${MOMENTUM_PACKAGE}::collect::fee`,
-      typeArguments: typeArgs,
+      typeArguments: [HERO_TYPE, AIDA_TYPE],
       arguments: [
         tx.object(POOL_ID),
         tx.object(POSITION_ID),
