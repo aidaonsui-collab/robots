@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/distribute-fees",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 12 * * *"
     }
   ]
 }
