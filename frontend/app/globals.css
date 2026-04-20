@@ -353,3 +353,10 @@
   background: #0f0f17 !important;
   color: #fff !important;
 }
+
+/* Deck print styles — force dark background on PDF export */
+@media print {
+  body { background: #07070e !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .slide { background: #07070e !important; }
+}
+html { background: #07070e; }
