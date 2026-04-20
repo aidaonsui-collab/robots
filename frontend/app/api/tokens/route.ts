@@ -29,6 +29,7 @@ const HIDDEN_TOKENS = new Set([
   '0x68a85f4e978f28d174b96fb540cd2d6560c25de9fed8416892ae0d87ea6956fb::saitama::SAITAMA',              // SAITAMA
   '0x517fa7b4b2ef37c5f9fadb23ef02bee83a3e0c65e6d352c99c72274cc0372e4d::opm::OPM',                      // OPM
   '0x30465754531001de37a001b91775575c1e742f759d09a2b662709a7fc1e40f02::dulce::DULCE',                   // Pan Dulce (duplicate)
+  '0x64da6249e484247e56331c0b7c4edfced821188d15fd9784bc11950d4e2d0fb1::sword::SWORD',                   // SWORD
 ])
 
 async function queryEvents(eventType: string, limit: number, descending: boolean) {

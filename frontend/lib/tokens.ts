@@ -459,6 +459,7 @@ const HIDDEN_TOKENS = new Set([
   '0x4129a8f1319a89367c844bceeb4e9f64f4406f58aa644b0f647b4df067e56480::genos::GENOS',                  // GENOS
   '0x68a85f4e978f28d174b96fb540cd2d6560c25de9fed8416892ae0d87ea6956fb::saitama::SAITAMA',              // SAITAMA
   '0x517fa7b4b2ef37c5f9fadb23ef02bee83a3e0c65e6d352c99c72274cc0372e4d::opm::OPM',                      // OPM
+  '0x64da6249e484247e56331c0b7c4edfced821188d15fd9784bc11950d4e2d0fb1::sword::SWORD',                   // SWORD
 ])
 
 export async function fetchAllPoolTokens(): Promise<PoolToken[]> {
