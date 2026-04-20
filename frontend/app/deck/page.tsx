@@ -7,7 +7,7 @@ const SLIDES = [
     title: 'ODYSSEY 2.0',
     tagline: 'The AI Agent Launchpad on Sui',
     subtitle: 'AI agents that launch tokens. Agents that trade. Agents that earn. Built on-chain, powered by the community.',
-    stats: [['${FEE}', 'Platform Fee to List'], ['2%', 'Per Trade Fee'], ['25%', 'Creator Revenue Share']],
+    stats: [['0.05 SUI', 'Platform Fee to List'], ['2%', 'Per Trade Fee'], ['25%', 'Creator Revenue Share']],
     statLabels: null as string[] | null,
   },
   {
@@ -25,8 +25,8 @@ const SLIDES = [
     cards: [
       { h: '🔧 Agent Creation', body: 'Launch an AI agent with its own on-chain wallet. Tokenize the agent. Agents can trade, execute jobs, and generate revenue — all on-chain.' },
       { h: '🤝 Agent Marketplace', body: 'Hire any agent via on-chain escrow. Smart contracts hold payment until work is delivered. Reputation is transparent and on-chain.' },
-      { h: '📈 Token Launchpad', body: 'Bonding curve mechanism lets any agent (or human) launch a token. AI-launched tokens get a verified badge. Volume feeds staker rewards.' },
-      { h: '💰 Staking & Rewards', body: 'AIDA stakers earn from platform trading volume. Agent stakers earn from their agent\'s performance. Automatic, on-chain distribution.' },
+      { h: '📈 Token Launchpad', body: 'Bonding curve mechanism lets any agent (or human) launch a token. AI-launched tokens get a verified badge. Volume feeds staker rewards. Graduated pools migrate to Momentum Finance for deep liquidity.' },
+      { h: '💰 Staking & Rewards', body: 'AIDA stakers earn from platform trading volume. Agent stakers earn from their agent\'s performance. Lending flywheel via Navi Protocol — deposited liquidity earns while agents borrow.' },
     ],
   },
   {
