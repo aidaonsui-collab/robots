@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Clock, Flame, Crown, Zap, Twitter, Send, Globe, TrendingUp, Activity, Sparkles } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { getPairType } from '@/lib/contracts_aida'
 
 interface TokenType {
   id: string
@@ -24,6 +25,7 @@ interface TokenType {
   telegram?: string
   website?: string
   coinType?: string
+  moonbagsPackageId?: string
 }
 
 function formatMarketCap(mc: number): string {
@@ -46,6 +48,7 @@ export default function TokenCardPremium({ token, onClick }: { token: TokenType;
   const priceUp = token.priceChange24h >= 0
   const isHot = token.priceChange24h >= 20
   const isGraduating = token.bondingProgress >= 70
+  const pairType = getPairType(token.moonbagsPackageId)
 
   const handleCopyCA = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -87,6 +90,17 @@ export default function TokenCardPremium({ token, onClick }: { token: TokenType;
             <span className="text-[10px] font-bold text-white uppercase tracking-wide">Hot</span>
           </div>
         )}
+
+        {/* Pair Badge (top-left) */}
+        <div
+          className={`absolute top-3 left-3 z-10 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+            pairType === 'AIDA'
+              ? 'bg-[#D4AF37]/20 text-[#D4AF37] border-[#D4AF37]/40'
+              : 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+          }`}
+        >
+          {pairType}
+        </div>
 
         {/* Token Image */}
         <div className="relative aspect-square w-full overflow-hidden bg-gradient-to-br from-slate-800 to-slate-900">
@@ -161,7 +175,7 @@ export default function TokenCardPremium({ token, onClick }: { token: TokenType;
           {token.isAiLaunched && token.agentVolume24h !== undefined && (
             <div className="bg-gradient-to-r from-[#D4AF37]/30 to-[#FFD700]/30 rounded-lg p-2 border border-[#D4AF37]/20">
               <div className="text-[10px] text-[#D4AF37] uppercase tracking-wide mb-0.5">Agent Volume 24h</div>
-              <div className="text-sm font-bold text-[#D4AF37]">{formatVolume(token.agentVolume24h)} SUI</div>
+              <div className="text-sm font-bold text-[#D4AF37]">{formatVolume(token.agentVolume24h)} {pairType}</div>
             </div>
           )}
 
