@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, Users, Coins, Activity, ExternalLink, BarChart3, Crown, Bot, Zap, ArrowUpRight, ArrowDownRight, Sparkles } from 'lucide-react'
 import { fetchAllPoolTokens, fetchPoolTrades, fetchSuiNSName, PoolToken, TradeEvent } from '@/lib/tokens'
 import { analyzeTradePattern, isTopAgent, getAgentConfidence, EXCLUDED_HUMAN_WALLETS } from '@/lib/agentDetection'
+import { getPairType } from '@/lib/contracts_aida'
 
 interface TokenWithTrades {
   token: PoolToken
@@ -20,14 +21,21 @@ function formatTimeAgo(ms: number): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
-const ORIG_PKG = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
+// Fan out across all moonbags event origin packages: legacy, v11, v12, and AIDA fork.
+// Matches EVENT_SOURCE_PACKAGES in lib/tokens.ts.
+const EVENT_PKGS = [
+  '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd', // legacy (v5-v10)
+  '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813', // v11
+  '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e', // v12
+  '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8', // AIDA fork
+]
 const RPC_URL  = 'https://fullnode.mainnet.sui.io'
 
 interface AgentStat {
   address:      string
   displayName:  string
-  suiIn:        number   // total SUI spent buying
-  suiOut:       number   // total SUI received selling
+  suiIn:        number   // total pair-token spent buying (SUI or AIDA depending on pool)
+  suiOut:       number   // total pair-token received selling
   realizedPnl:  number   // suiOut - suiIn
   trades:       number
   buys:         number
@@ -52,22 +60,32 @@ async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
 // Imported from lib/agentDetection.ts
 
 async function fetchAgentStats(): Promise<AgentStat[]> {
-  // Fetch all trade events + creation events in parallel
-  const [tradeResult, createResult] = await Promise.all([
+  // Fetch trade + creation events from every known moonbags package namespace
+  // in parallel and merge.
+  const queries = EVENT_PKGS.flatMap(pkg => [
     rpcCall('suix_queryEvents', [
-      { MoveEventType: `${ORIG_PKG}::moonbags::TradedEventV2` },
+      { MoveEventType: `${pkg}::moonbags::TradedEventV2` },
       null, 200, false
-    ]) as Promise<{ data: Array<{ parsedJson: Record<string, string> }> }>,
+    ]).catch(() => ({ data: [] })) as Promise<{ data: Array<{ parsedJson: Record<string, string> }> }>,
     rpcCall('suix_queryEvents', [
-      { MoveEventType: `${ORIG_PKG}::moonbags::CreatedEventV2` },
+      { MoveEventType: `${pkg}::moonbags::CreatedEventV2` },
       null, 100, false
-    ]) as Promise<{ data: Array<{ parsedJson: Record<string, string> }> }>,
+    ]).catch(() => ({ data: [] })) as Promise<{ data: Array<{ parsedJson: Record<string, string> }> }>,
   ])
+  const results = await Promise.all(queries)
 
-  const creators = new Set((createResult?.data ?? []).map(e => e.parsedJson.created_by))
+  // results is interleaved [trades_pkgA, creates_pkgA, trades_pkgB, creates_pkgB, ...]
+  const tradeEvents: Array<{ parsedJson: Record<string, string> }> = []
+  const createEvents: Array<{ parsedJson: Record<string, string> }> = []
+  for (let i = 0; i < results.length; i += 2) {
+    tradeEvents.push(...(results[i]?.data ?? []))
+    createEvents.push(...(results[i + 1]?.data ?? []))
+  }
+
+  const creators = new Set(createEvents.map(e => e.parsedJson.created_by))
   const agentMap = new Map<string, AgentStat>()
 
-  for (const event of tradeResult?.data ?? []) {
+  for (const event of tradeEvents) {
     const p = event.parsedJson
     const addr     = p.user
     
@@ -114,7 +132,7 @@ async function fetchAgentStats(): Promise<AgentStat[]> {
   }
 
   // Also include pure creators (launched but haven't traded yet)
-  for (const event of createResult?.data ?? []) {
+  for (const event of createEvents) {
     const addr = event.parsedJson.created_by
     
     // Skip excluded human wallets
@@ -240,7 +258,7 @@ function TopAgents() {
                     {pnlPos
                       ? <ArrowUpRight className="w-3.5 h-3.5" />
                       : agent.realizedPnl < 0 ? <ArrowDownRight className="w-3.5 h-3.5" /> : null}
-                    {agent.realizedPnl === 0 ? '—' : `${Math.abs(agent.realizedPnl).toFixed(2)} SUI`}
+                    {agent.realizedPnl === 0 ? '—' : `${Math.abs(agent.realizedPnl).toFixed(2)}`}
                   </div>
                   <p className="text-[10px] text-gray-600">
                     {agent.suiIn > 0 ? `${agent.suiIn.toFixed(1)} in` : 'no buys'}
@@ -273,7 +291,9 @@ export default function StatsPage() {
     })
   }, [])
 
-  const totalVolumeSui = data.reduce((s, d) => s + (Number(d.token.realSuiRaised) || 0), 0)
+  // Split volume by pair token so SUI pools and AIDA pools aren't summed together.
+  const totalVolumeSui  = data.reduce((s, d) => getPairType(d.token.moonbagsPackageId) === 'SUI'  ? s + (Number(d.token.realSuiRaised) || 0) : s, 0)
+  const totalVolumeAida = data.reduce((s, d) => getPairType(d.token.moonbagsPackageId) === 'AIDA' ? s + (Number(d.token.realSuiRaised) || 0) : s, 0)
   const totalTrades = data.reduce((s, d) => s + (d.trades?.length || 0), 0)
   const allTrades = data
     .flatMap(d => d.trades.map(t => ({ ...t, symbol: d.token.symbol, poolId: d.token.poolId })))
@@ -332,9 +352,16 @@ export default function StatsPage() {
               <Activity className="w-4 h-4" />
               <span className="text-xs">Total Volume</span>
             </div>
-            <p className="text-2xl font-bold text-white">
-              {loading ? '—' : `${totalVolumeSui.toFixed(2)} SUI`}
-            </p>
+            {loading ? (
+              <p className="text-2xl font-bold text-white">—</p>
+            ) : (
+              <div className="space-y-0.5">
+                <p className="text-xl font-bold text-white">{totalVolumeSui.toFixed(2)} SUI</p>
+                <p className="text-sm font-semibold text-[#D4AF37]">
+                  {totalVolumeAida.toLocaleString(undefined, { maximumFractionDigits: 0 })} AIDA
+                </p>
+              </div>
+            )}
           </div>
           <div className="bg-[#0f0f17] border border-gray-800/50 rounded-xl p-4">
             <div className="flex items-center gap-2 text-gray-500 mb-2">
@@ -385,37 +412,40 @@ export default function StatsPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {topCoins.map(({ token }, idx) => (
-                    <a
-                      key={token.poolId}
-                      href={`/bondingcurve/coins/${token.coinType}`}
-                      className="flex items-center justify-between py-3 border-b border-gray-800/40 last:border-0 hover:bg-white/2 rounded-lg px-2 -mx-2 transition-colors group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm flex-shrink-0 ${
-                          idx === 0 ? 'bg-gradient-to-br from-[#D4AF37] to-[#FFD700]' :
-                          idx === 1 ? 'bg-gradient-to-br from-[#C0C0C0] to-[#A8A8A8]' :
-                          idx === 2 ? 'bg-gradient-to-br from-[#CD7F32] to-[#B8732D]' :
-                          'bg-gradient-to-br from-gray-700 to-gray-600'
-                        }`}>
-                          {idx + 1}
+                  {topCoins.map(({ token }, idx) => {
+                    const pair = getPairType(token.moonbagsPackageId)
+                    return (
+                      <a
+                        key={token.poolId}
+                        href={`/bondingcurve/coins/${token.coinType}`}
+                        className="flex items-center justify-between py-3 border-b border-gray-800/40 last:border-0 hover:bg-white/2 rounded-lg px-2 -mx-2 transition-colors group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm flex-shrink-0 ${
+                            idx === 0 ? 'bg-gradient-to-br from-[#D4AF37] to-[#FFD700]' :
+                            idx === 1 ? 'bg-gradient-to-br from-[#C0C0C0] to-[#A8A8A8]' :
+                            idx === 2 ? 'bg-gradient-to-br from-[#CD7F32] to-[#B8732D]' :
+                            'bg-gradient-to-br from-gray-700 to-gray-600'
+                          }`}>
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm text-white">{token.name}</p>
+                            <p className="text-xs text-gray-500">${token.symbol}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-sm text-white">{token.name}</p>
-                          <p className="text-xs text-gray-500">${token.symbol}</p>
+                        <div className="text-right flex items-center gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-200 font-mono">
+                              {token.currentPrice.toFixed(token.currentPrice < 0.0001 ? 9 : 6)} {pair}
+                            </p>
+                            <p className="text-xs text-[#D4AF37]">{token.progress.toFixed(1)}% bonded</p>
+                          </div>
+                          <ExternalLink className="w-3.5 h-3.5 text-gray-600 group-hover:text-gray-400 transition-colors" />
                         </div>
-                      </div>
-                      <div className="text-right flex items-center gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-200 font-mono">
-                            {token.currentPrice.toFixed(token.currentPrice < 0.0001 ? 9 : 6)} SUI
-                          </p>
-                          <p className="text-xs text-[#D4AF37]">{token.progress.toFixed(1)}% bonded</p>
-                        </div>
-                        <ExternalLink className="w-3.5 h-3.5 text-gray-600 group-hover:text-gray-400 transition-colors" />
-                      </div>
-                    </a>
-                  ))}
+                      </a>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -471,7 +501,7 @@ export default function StatsPage() {
 
                           {/* Volume */}
                           <div className="text-right">
-                            <p className="text-sm font-bold text-white">{volume.toFixed(2)} SUI</p>
+                            <p className="text-sm font-bold text-white">{volume.toFixed(2)}</p>
                           </div>
 
                           {/* Trade count */}
@@ -500,4 +530,3 @@ export default function StatsPage() {
     </main>
   )
 }
-
