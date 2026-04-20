@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useCurrentAccount } from '@mysten/dapp-kit'
 import { Sparkles, Plus, Search, Filter, Activity, PauseCircle, PlayCircle, Settings } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { type PairToken } from '@/lib/contracts_aida'
 
 interface Agent {
   id: string
@@ -21,6 +22,7 @@ interface Agent {
   volume24h?: number
   trades24h?: number
   earnings?: number
+  pairType?: PairToken
 }
 
 export default function MyAgentsPage() {
@@ -66,14 +68,15 @@ export default function MyAgentsPage() {
                   volume24h: 0,
                   trades24h: 0,
                   earnings: 0,
+                  pairType: 'SUI' as PairToken,
                 }
               }
 
               const poolData = await poolResponse.json()
               
-              // Calculate creator earnings (40% of trading fees)
-              // Trading fee is 2% per trade, creator gets 40% of that = 0.8% of volume
-              const earnings = (poolData.volume24h || 0) * 0.008
+              // Calculate creator earnings (30% of trading fees per moonbags_aida contract constants).
+              // Trading fee is 2% per trade → creator gets 30% of that = 0.6% of volume.
+              const earnings = (poolData.volume24h || 0) * 0.006
 
               return {
                 id: agent.id,
@@ -89,6 +92,7 @@ export default function MyAgentsPage() {
                 volume24h: poolData.volume24h || 0,
                 trades24h: poolData.trades?.length || 0,
                 earnings: earnings,
+                pairType: (poolData.pairType as PairToken) || 'SUI',
               }
             } catch (error) {
               console.error('Error fetching pool data for agent:', agent.id, error)
@@ -98,6 +102,7 @@ export default function MyAgentsPage() {
                 volume24h: 0,
                 trades24h: 0,
                 earnings: 0,
+                pairType: 'SUI' as PairToken,
               }
             }
           })
@@ -211,7 +216,9 @@ export default function MyAgentsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredAgents.map((agent, i) => (
+            {filteredAgents.map((agent, i) => {
+              const pair = agent.pairType || 'SUI'
+              return (
               <motion.div
                 key={agent.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -234,7 +241,18 @@ export default function MyAgentsPage() {
                     <h3 className="font-bold text-white text-lg truncate group-hover:text-[#D4AF37] transition-colors">
                       {agent.name}
                     </h3>
-                    <p className="text-sm text-gray-400">${agent.symbol}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm text-gray-400">${agent.symbol}</p>
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide border ${
+                          pair === 'AIDA'
+                            ? 'bg-[#D4AF37]/20 text-[#D4AF37] border-[#D4AF37]/40'
+                            : 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                        }`}
+                      >
+                        {pair}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Status Badge */}
@@ -261,7 +279,7 @@ export default function MyAgentsPage() {
                   <div className="bg-white/5 rounded-lg p-3">
                     <div className="text-xs text-gray-500 mb-1">24h Volume</div>
                     <div className="text-sm font-bold text-white">
-                      {agent.volume24h ? agent.volume24h.toFixed(1) + ' SUI' : '—'}
+                      {agent.volume24h ? `${agent.volume24h.toFixed(1)} ${pair}` : '—'}
                     </div>
                   </div>
                 </div>
@@ -270,7 +288,7 @@ export default function MyAgentsPage() {
                 <div className="bg-gradient-to-r from-[#D4AF37]/10 to-[#FFD700]/10 border border-[#D4AF37]/20 rounded-lg p-3">
                   <div className="text-xs text-gray-400 mb-1">Your Earnings</div>
                   <div className="text-lg font-bold text-[#D4AF37]">
-                    {agent.earnings ? agent.earnings.toFixed(3) + ' SUI' : '0.000 SUI'}
+                    {agent.earnings ? `${agent.earnings.toFixed(3)} ${pair}` : `0.000 ${pair}`}
                   </div>
                 </div>
 
@@ -296,7 +314,7 @@ export default function MyAgentsPage() {
                   </button>
                 </div>
               </motion.div>
-            ))}
+            )})}
           </div>
         )}
       </div>
