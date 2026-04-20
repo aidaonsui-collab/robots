@@ -14,10 +14,12 @@ const SuiLockPage = lazy(() => import('../suilock/page'))
 const SUI_RPC = 'https://fullnode.mainnet.sui.io'
 
 // ─── Contract constants ───────────────────────────────────────────────────────
-// V12 package for function calls (latest code), but AIDA staking positions live
-// in the LEGACY stakeConfig (initialized at v7 launch, persists across upgrades).
-const PKG          = MOONBAGS_CONTRACT_V12.packageId
-const STAKE_CFG    = MOONBAGS_CONTRACT_LEGACY.stakeConfig  // 0x312216a... — AIDA pool lives here
+// AIDA staking positions live in the V12 stakeConfig (0x59c35bc...). V12 *package*
+// unstake aborts with code 4 (new restriction), so use V11 for all stake/unstake/
+// claim calls on the shared stakeConfig — it's the last working package version.
+const V11_PKG      = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
+const PKG          = V11_PKG
+const STAKE_CFG    = MOONBAGS_CONTRACT_V12.stakeConfig    // 0x59c35bc... — AIDA pool lives here
 const MBAGS_CFG    = MOONBAGS_CONTRACT_V12.configuration
 
 // Legacy v1 AIDA staking (original super-legacy — still migrates to current PKG)
@@ -365,7 +367,7 @@ export default function StakingPage() {
         typeArguments: [AIDA_TYPE],
         arguments: [
           tx.object(STAKE_CFG),
-          tx.pure.u64(BigInt(Math.floor(v3Staked * 1e9))),
+          tx.pure.u64(stakerBalance),
           tx.object(SUI_CLOCK),
         ],
       })
