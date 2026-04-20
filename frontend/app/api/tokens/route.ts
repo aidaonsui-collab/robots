@@ -13,6 +13,11 @@ const ORIGIN_PACKAGE_V11    = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f0290
 const ORIGIN_PACKAGE_V12    = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e'
 const ORIGIN_PACKAGE_AIDA   = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
 
+// Token supply used as fallback once a bonding curve graduates — the contract
+// zeroes out remain_token_reserves on transfer_pool, so we can't read it from
+// the pool object after graduation. Standard Odyssey launch supply is 1B.
+const POST_GRAD_SUPPLY = 1_000_000_000
+
 // Denylist — hide test/unwanted tokens. New tokens appear automatically unless added here.
 const HIDDEN_TOKENS = new Set([
   '0x57acced890472772e1e3666bdd8f38f88dc9a0d396a8fe41fefa4e91b7efb522::coin_template::COIN_TEMPLATE',  // HOPE
@@ -189,6 +194,7 @@ export async function GET() {
         const typeStr = poolData.content.type || ''
         const coinTypeMatch = typeStr.match(/Pool<(.+)>/)
         const coinType = coinTypeMatch ? coinTypeMatch[1] : ''
+        const isCompleted = !!f.is_completed
 
         const virtualSui = BigInt(f.virtual_sui_reserves || '0')
         const virtualToken = BigInt(f.virtual_token_reserves || '0')
@@ -197,11 +203,19 @@ export async function GET() {
         const remainTokenRaw = BigInt(f.remain_token_reserves?.fields?.balance || '0')
 
         const price = virtualToken > 0n ? Number(virtualSui) / 1e9 / (Number(virtualToken) / 1e6) : 0
-        // Use tradeable supply (R) not total minted (2R) — second R is locked for DEX LP.
-        const totalSupply = Number(remainTokenRaw) / 1e6  // R tokens
+        // Post-graduation the remain_token_reserves balance is 0 (transferred to admin),
+        // so use the standard 1B launch supply fallback so market cap still renders.
+        const totalSupply = remainTokenRaw > 0n
+          ? Number(remainTokenRaw) / 1e6
+          : POST_GRAD_SUPPLY
         const realSuiSui = Number(realSuiMist) / 1e9
         const thresholdSui = Number(thresholdMist) / 1e9
-        const progress = thresholdMist > 0n ? (Number(realSuiMist) / Number(thresholdMist)) * 100 : 0
+        // Graduated pools get capped to 100% — their realSuiMist was drained to the admin.
+        const progress = isCompleted
+          ? 100
+          : thresholdMist > 0n
+            ? (Number(realSuiMist) / Number(thresholdMist)) * 100
+            : 0
 
         // Detect pair token from the event type package (not the transaction sender)
         const eventType = e.type || e.eventType || ''
@@ -236,7 +250,7 @@ export async function GET() {
           thresholdSui,
           progress,
           volume1h,
-          isCompleted: f.is_completed,
+          isCompleted,
           createdAt: Number(meta.ts),
           creator: meta.created_by,
           pairToken,
