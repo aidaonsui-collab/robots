@@ -112,31 +112,41 @@ export async function GET(
     }
 
     // ── Bonding curve pool ───────────────────────────────────────────────────────
-    const virtualSui = BigInt(fields.virtual_sui_reserves || '0')
-    const virtualToken = BigInt(fields.virtual_token_reserves || '0')
-    const feesCollected = BigInt(fields.fees_collected || '0')
-    const targetRaise = BigInt(fields.target_raise_amount || '0')
+    // Field names on the Pool struct (same for SUI and AIDA forks):
+    //   virtual_sui_reserves     u64           — bonding curve virtual quote reserves
+    //   virtual_token_reserves   u64           — bonding curve virtual token reserves
+    //   real_sui_reserves        Balance<Q>    — actual quote collected (nested: .fields.balance)
+    //   threshold                u64           — graduation threshold in quote mist
+    //   fee_recipient            Coin<Q>       — accumulated trading fees (nested: .fields.balance)
+    //   remain_token_reserves    Balance<T>    — tradable token supply (nested: .fields.balance)
+    //   is_completed             bool
+    const virtualSui     = BigInt(fields.virtual_sui_reserves || '0')
+    const virtualToken   = BigInt(fields.virtual_token_reserves || '0')
+    const realQuoteMist  = BigInt(fields.real_sui_reserves?.fields?.balance || '0')
+    const thresholdMist  = BigInt(fields.threshold || '0')
+    const feeMist        = BigInt(fields.fee_recipient?.fields?.balance || '0')
     const remainTokenRaw = BigInt(fields.remain_token_reserves?.fields?.balance || '0')
-    const isCompleted = fields.is_completed || false
+    const isCompleted    = fields.is_completed || false
 
-    // Price in quote-token per token (apply correct decimal scaling)
+    // Spot price: quote-token per token (apply correct decimal scaling)
     const price = virtualToken > 0n
       ? (Number(virtualSui) / 1e9) / (Number(virtualToken) / 1e6)
       : 0
 
-    // Total supply: 2 × remain_token_reserves (curve + LP halves); fallback 1B
+    // Use tradeable supply (R) not total minted (2R) for MC — second R is locked for DEX LP.
     const totalSupply = remainTokenRaw > 0n
-      ? 2 * Number(remainTokenRaw) / 1e6
+      ? Number(remainTokenRaw) / 1e6
       : 1_000_000_000
 
-    // Market cap in USD
     const marketCap = price * totalSupply * quotePriceUsd
 
-    const raised = Number(virtualSui) / 1e9
-    const target = Number(targetRaise) / 1e9
+    const raised    = Number(realQuoteMist) / 1e9
+    const target    = Number(thresholdMist) / 1e9
+    const fees      = Number(feeMist) / 1e9
     const bondingProgress = target > 0 ? (raised / target) * 100 : 0
 
-    const estimatedVolume = Number(feesCollected) / 1e9 / 0.02
+    // Contract collects 2% fee, so lifetime volume ≈ fees / 0.02.
+    const estimatedVolume = fees / 0.02
 
     return NextResponse.json({
       poolId,
@@ -144,15 +154,15 @@ export async function GET(
       pairType,
       price,
       marketCap,
-      virtualSuiReserves: raised,   // legacy field name
-      virtualQuoteReserves: raised,
+      virtualSuiReserves: Number(virtualSui) / 1e9,   // legacy field name (now exposes virtual reserve, not raised)
+      virtualQuoteReserves: Number(virtualSui) / 1e9,
       virtualTokenReserves: Number(virtualToken) / 1e6,
-      feesCollected: Number(feesCollected) / 1e9,
+      feesCollected: fees,
       targetRaise: target,
       raised,
       bondingProgress,
       isCompleted,
-      volume24h: estimatedVolume,
+      volume24h: estimatedVolume,   // lifetime volume estimate — no 24h window yet
       trades24h: 0,
     })
   } catch (error: any) {
