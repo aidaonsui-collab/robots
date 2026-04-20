@@ -58,6 +58,8 @@ export default function BondingCurvePage() {
           const vol1h = trades
             .filter(tr => tr.timestampMs >= oneHourAgo)
             .reduce((sum, tr) => sum + tr.suiAmount, 0)
+          // All-time trade volume (survives graduation — live sui_raised is drained to 0 on migration)
+          const volAll = trades.reduce((sum, tr) => sum + tr.suiAmount, 0)
 
           // Compute 24h price change
           const tradesAsc = [...trades].sort((a, b) => a.timestampMs - b.timestampMs)
@@ -68,6 +70,7 @@ export default function BondingCurvePage() {
 
           // Enrich token with computed stats
           t.volume1h = vol1h
+          ;(t as any).volumeAll = volAll
           t.priceChange24h = priceChange24h
 
           return trades.map(tr => ({
@@ -219,9 +222,13 @@ export default function BondingCurvePage() {
     volume: '1H Volume',
   }
 
-  // After a pool graduates, its real_sui_reserves balance is drained to seed the DEX pool,
-  // so the live reading is 0. Fall back to the threshold (≈ amount traded to reach graduation).
+  // Prefer the all-time sum of trade events — it survives pool graduation
+  // (live real_sui_reserves gets drained to 0 when the bonding curve migrates
+  // its liquidity to the DEX pool). Fall back to the threshold for graduated
+  // pools if the trade event stream is still loading, then to the live reserve.
   const tradedAmount = (t: PoolToken) => {
+    const volAll = (t as any).volumeAll
+    if (typeof volAll === 'number' && volAll > 0) return volAll
     const live = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
     const isCompleted = t.isCompleted ?? (t as any).isCompleted
     if (isCompleted) return t.threshold ?? (t as any).thresholdSui ?? live

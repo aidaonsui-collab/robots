@@ -87,6 +87,8 @@ export default function CreatePresalePage() {
     creatorVestingEndDate: '',     // ISO datetime — empty = cliff only
     creatorSuiPercent: '0',        // % of raised SUI sent to creator wallet at migration (0–50)
     // creator gets remainder of token supply
+    creatorX: '',                  // Optional: the CREATOR's personal X/Twitter profile (not the project's).
+                                   // Stored off-chain (KV), not in the Move contract.
   })
 
   const set = (field: string, value: string) =>
@@ -284,7 +286,19 @@ export default function CreatePresalePage() {
         (c: any) => c.type === 'created' && c.objectType?.includes('::presale::Presale<')
       )
 
-      setPresaleId((presaleObj as any)?.objectId || '')
+      const newPresaleId = (presaleObj as any)?.objectId || ''
+      setPresaleId(newPresaleId)
+
+      // Stash the creator's X handle off-chain (the Move struct has no field for it).
+      const creatorXTrimmed = presaleParams.creatorX.trim()
+      if (newPresaleId && creatorXTrimmed) {
+        fetch(`/api/presale/${newPresaleId}/creator-profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creatorX: creatorXTrimmed, creator: account?.address }),
+        }).catch(() => {})
+      }
+
       setLaunched(true)
       setStatusMsg('Presale created successfully!')
       setStatusType('success')
@@ -720,6 +734,24 @@ export default function CreatePresalePage() {
                   <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
                   <p className="text-orange-400/80 text-[10px]">Tokens are always burned to @0x0 if the presale fails or is cancelled — no stranded supply.</p>
                 </div>
+              </div>
+            </div>
+
+            {/* Creator Profile (off-chain) */}
+            <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 space-y-4">
+              <div>
+                <h3 className="text-white font-semibold text-sm">Creator Profile</h3>
+                <p className="text-gray-500 text-xs mt-1">Optional. This is <span className="text-gray-300">your</span> personal profile, not the project's. Shown on the presale page so contributors know who launched it.</p>
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs font-medium mb-1.5">Your X (Twitter) Profile</label>
+                <input
+                  type="text"
+                  value={presaleParams.creatorX}
+                  onChange={(e) => setParam('creatorX', e.target.value)}
+                  placeholder="@yourhandle or https://x.com/yourhandle"
+                  className="w-full px-3 py-2.5 bg-[#07070e] border border-white/[0.06] rounded-xl text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-[#D4AF37]/40"
+                />
               </div>
             </div>
 

@@ -135,6 +135,7 @@ export default function PresaleDetailPage() {
   const [copied, setCopied] = useState(false)
   const [timeLeft, setTimeLeft] = useState(0)
   const [contributors, setContributors] = useState<{ address: string; amount: number }[]>([])
+  const [creatorX, setCreatorX] = useState<string>('')
 
   const fetchContributors = useCallback(async () => {
     if (!presaleId) return
@@ -189,6 +190,11 @@ export default function PresaleDetailPage() {
         setPresale(data)
         setUserContribution(data.userContribution || 0)
       }
+      // Off-chain creator profile (X handle). Optional — 404 is fine.
+      fetch(`/api/presale/${presaleId}/creator-profile`)
+        .then(r => r.ok ? r.json() : null)
+        .then(p => { if (p?.creatorX) setCreatorX(p.creatorX) })
+        .catch(() => {})
     } catch (e) {
       console.error('Failed to fetch presale:', e)
     } finally {
@@ -1156,6 +1162,20 @@ export default function PresaleDetailPage() {
                   <span className="text-gray-500">Creator</span>
                   <span className="text-gray-300 font-mono text-xs">{presale.creator.slice(0, 8)}...{presale.creator.slice(-4)}</span>
                 </div>
+                {creatorX && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">Creator's X</span>
+                    <a
+                      href={creatorX.startsWith('http') ? creatorX : `https://x.com/${creatorX.replace(/^@/, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[#D4AF37] hover:underline text-xs"
+                    >
+                      <Twitter className="w-3 h-3" />
+                      {creatorX.replace(/^https?:\/\/(www\.)?x\.com\//, '@').replace(/^https?:\/\/(www\.)?twitter\.com\//, '@')}
+                    </a>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Token Price</span>
                   <span className="text-white">{presale.pricePerTokenSui.toFixed(6)} SUI</span>
