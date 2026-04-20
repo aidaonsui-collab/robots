@@ -304,7 +304,9 @@ export default function TokenCard({ token, onClick }: { token: TokenType; onClic
       className={`
         group relative bg-[#0d0f1a] rounded-xl border p-4 cursor-pointer
         card-lift card-shimmer overflow-hidden
-        ${koth
+        ${graduated
+          ? 'border-[#D4AF37]/40 hover:border-[#D4AF37]/70 hover:shadow-[#D4AF37]/20 graduated-border'
+          : koth
           ? 'border-yellow-500/30 hover:border-yellow-500/60 hover:shadow-yellow-500/10'
           : 'border-gray-800/60 hover:border-[#D4AF37]/40 hover:shadow-[#D4AF37]/10'
         }
