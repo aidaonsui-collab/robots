@@ -16,7 +16,7 @@ function fmtD(ms: number) { return ms && !isNaN(ms) ? new Date(ms).toLocaleStrin
 function tl(ms: number) { if (!ms || isNaN(ms)) return '—'; const d = ms - Date.now(); if (d <= 0) return 'Unlocked'; const h = Math.floor(d / 3600000); return h > 24 ? Math.floor(h/24)+'d '+(h%24)+'h' : h+'h' }
 function fmtAmt(raw: string, d = 9) { const v = parseInt(raw) / 10**d; return isNaN(v) ? '—' : v >= 1e6 ? (v/1e6).toFixed(2)+'M' : v >= 1e3 ? (v/1e3).toFixed(2)+'K' : v.toFixed(2) }
 
-interface Lk { id: string; type: 'lock'|'vesting'; tokenType: string; balance: string; beneficiary: string; creator: string; unlockTime?: number; cliffTime?: number; endTime?: number }
+interface Lk { id: string; type: 'lock'|'vesting'; tokenType: string; balance: string; decimals: number; beneficiary: string; creator: string; unlockTime?: number; cliffTime?: number; endTime?: number }
 
 function fmtAddr(a: string) { return a ? `${a.slice(0,6)}...${a.slice(-4)}` : '—' }
 function fmtToken(t: string) {
@@ -55,6 +55,18 @@ export default function SuiLockPage() {
       limit: 50, order: 'descending',
     })
     const res: Lk[] = []
+    const decimalsCache = new Map<string, number>()
+    const getDecimals = async (tokenType: string): Promise<number> => {
+      if (tokenType === SUI_COIN_TYPE) return 9
+      const cached = decimalsCache.get(tokenType)
+      if (cached != null) return cached
+      try {
+        const meta = await suiClient.getCoinMetadata({ coinType: tokenType })
+        const d = meta?.decimals ?? 6
+        decimalsCache.set(tokenType, d)
+        return d
+      } catch { return 6 }
+    }
 
     for (const evt of lockEvts.data) {
       try {
@@ -71,8 +83,9 @@ export default function SuiLockPage() {
         const liveBalance = content && 'fields' in content ? String((content.fields as Record<string, unknown>).balance ?? f.amount ?? '0') : String(f.amount ?? '0')
         // Skip fully claimed locks (zero balance)
         if (parseInt(liveBalance) <= 0) continue
+        const tokenType = coinType(objType)
         res.push({
-          id: objId, type: 'lock', tokenType: coinType(objType), balance: liveBalance,
+          id: objId, type: 'lock', tokenType, balance: liveBalance, decimals: await getDecimals(tokenType),
           beneficiary: f.beneficiary as string, creator: (f.creator as string) ?? '',
           unlockTime: num(f.unlock_time),
         })
@@ -95,8 +108,9 @@ export default function SuiLockPage() {
         const liveBalance = String(fields.balance ?? f.total_amount ?? '0')
         // Skip fully claimed vesting wallets (zero balance)
         if (parseInt(liveBalance) <= 0) continue
+        const tokenType = coinType(objType)
         res.push({
-          id: objId, type: 'vesting', tokenType: coinType(objType), balance: liveBalance,
+          id: objId, type: 'vesting', tokenType, balance: liveBalance, decimals: await getDecimals(tokenType),
           beneficiary: f.beneficiary as string, creator: (f.creator as string) ?? '',
           cliffTime: num(f.cliff_time), endTime: num(f.end_time),
         })
@@ -311,7 +325,7 @@ export default function SuiLockPage() {
                     <span className="text-xs text-[#6b7280] font-mono">{l.tokenType.slice(0,10)}...</span>
                   </div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div><span className="text-[#6b7280] text-xs">Balance</span><div className="font-medium">{fmtAmt(l.balance)}</div></div>
+                    <div><span className="text-[#6b7280] text-xs">Balance</span><div className="font-medium">{fmtAmt(l.balance, l.decimals)}</div></div>
                     {l.type==='lock' ? <><div><span className="text-[#6b7280] text-xs">Unlocks</span><div className="font-medium text-xs">{fmtD(l.unlockTime??0)}</div></div><div><span className="text-[#6b7280] text-xs">Time left</span><div className="font-medium text-xs">{tl(l.unlockTime??0)}</div></div></>
                       : <><div><span className="text-[#6b7280] text-xs">Cliff</span><div className="font-medium text-xs">{fmtD(l.cliffTime??0)}</div></div><div><span className="text-[#6b7280] text-xs">Fully Vested</span><div className="font-medium text-xs">{fmtD(l.endTime??0)}</div></div></>}
                   </div>
@@ -345,7 +359,7 @@ export default function SuiLockPage() {
                 </span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                <div><span className="text-[#6b7280] text-xs block">Balance</span><div className="font-medium">{fmtAmt(l.balance)}</div></div>
+                <div><span className="text-[#6b7280] text-xs block">Balance</span><div className="font-medium">{fmtAmt(l.balance, l.decimals)}</div></div>
                 <div><span className="text-[#6b7280] text-xs block">{l.type==='lock' ? 'Unlocks' : 'Cliff'}</span><div className="font-medium text-xs">{fmtD(l.type==='lock' ? l.unlockTime??0 : l.cliffTime??0)}</div></div>
                 <div><span className="text-[#6b7280] text-xs block">Creator</span><div className="font-medium text-xs font-mono">{fmtAddr(l.creator)}</div></div>
                 <div><span className="text-[#6b7280] text-xs block">Beneficiary</span><div className="font-medium text-xs font-mono">{fmtAddr(l.beneficiary)}</div></div>

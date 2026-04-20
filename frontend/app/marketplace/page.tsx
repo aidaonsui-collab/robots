@@ -42,6 +42,7 @@ const CATEGORIES = [
 // ─── Sparkline SVG Component ────────────────────────────────────────────────
 
 function Sparkline({ data, color = '#D4AF37', height = 48 }: { data: number[]; color?: string; height?: number }) {
+  if (!data || data.length < 2) return <div style={{ height }} className="w-full" />
   const w = 200
   const h = height
   const max = Math.max(...data)
@@ -69,44 +70,6 @@ function Sparkline({ data, color = '#D4AF37', height = 48 }: { data: number[]; c
   )
 }
 
-// ─── Mock sparkline data generators ─────────────────────────────────────────
-
-const genSparkline = (base: number, volatility: number, points = 30) =>
-  Array.from({ length: points }, (_, i) => base + Math.sin(i * 0.3) * volatility + Math.random() * volatility * 0.5 + i * (volatility * 0.02))
-
-const SPARK_AGDP = genSparkline(320, 40)
-const SPARK_REVENUE = genSparkline(2.1, 0.6)
-const SPARK_JOBS = genSparkline(1400, 200)
-const SPARK_WALLETS = genSparkline(18, 4)
-
-// ─── Mock Data ──────────────────────────────────────────────────────────────
-
-const MOCK_SERVICES: ServiceListing[] = [
-  { serviceId: 'svc_demo_1', agentId: 'demo-agent-1', agentName: 'AlphaBot', agentSymbol: 'ALPHA', name: 'Market Analysis Report', description: 'Deep technical and fundamental analysis of any crypto token. Includes RSI, MACD, support/resistance levels, and market sentiment.', price: 5, category: 'analysis' },
-  { serviceId: 'svc_demo_2', agentId: 'demo-agent-2', agentName: 'ContentCraft', agentSymbol: 'CRAFT', name: 'Twitter Thread Writer', description: 'Generate engaging Twitter/X threads about your project, token launch, or DeFi strategy. Optimized for engagement and virality.', price: 3, category: 'content' },
-  { serviceId: 'svc_demo_3', agentId: 'demo-agent-3', agentName: 'DataMiner', agentSymbol: 'DATA', name: 'On-Chain Data Report', description: 'Comprehensive on-chain analysis: whale movements, holder distribution, DEX volume, and liquidity depth for any Sui token.', price: 8, category: 'data' },
-  { serviceId: 'svc_demo_4', agentId: 'demo-agent-1', agentName: 'AlphaBot', agentSymbol: 'ALPHA', name: 'Trading Signal Alert', description: 'Real-time trading signals with entry/exit points, stop-loss levels, and risk assessment based on multi-timeframe analysis.', price: 10, category: 'trading' },
-  { serviceId: 'svc_demo_5', agentId: 'demo-agent-4', agentName: 'CodeForge', agentSymbol: 'FORGE', name: 'Smart Contract Audit', description: 'Automated review of Move smart contracts for common vulnerabilities, gas optimization suggestions, and best practices.', price: 15, category: 'code' },
-  { serviceId: 'svc_demo_6', agentId: 'demo-agent-5', agentName: 'SocialPulse', agentSymbol: 'PULSE', name: 'Community Sentiment Report', description: 'Analyze Twitter, Telegram, and Discord sentiment for any crypto project. Includes engagement metrics and trend detection.', price: 4, category: 'social' },
-]
-
-const MOCK_ACTIVITY: ActivityEvent[] = [
-  { id: 'act_demo_1', type: 'request_fulfilled', providerName: 'AlphaBot', providerId: 'demo-agent-1', requesterName: '0x4a9f...c3e2', requesterId: 'user1', serviceName: 'Market Analysis Report', price: 5, blobId: 'walrus_abc123', timestamp: new Date(Date.now() - 15 * 60000).toISOString() },
-  { id: 'act_demo_2', type: 'request_created', providerName: 'CodeForge', providerId: 'demo-agent-4', requesterName: 'DataMiner', requesterId: 'demo-agent-3', serviceName: 'Smart Contract Audit', price: 15, timestamp: new Date(Date.now() - 45 * 60000).toISOString() },
-  { id: 'act_demo_3', type: 'service_listed', providerName: 'SocialPulse', providerId: 'demo-agent-5', serviceName: 'Community Sentiment Report', price: 4, timestamp: new Date(Date.now() - 2 * 3600000).toISOString() },
-  { id: 'act_demo_4', type: 'request_fulfilled', providerName: 'ContentCraft', providerId: 'demo-agent-2', requesterName: 'AlphaBot', requesterId: 'demo-agent-1', serviceName: 'Twitter Thread Writer', price: 3, blobId: 'walrus_def456', timestamp: new Date(Date.now() - 4 * 3600000).toISOString() },
-  { id: 'act_demo_5', type: 'request_created', providerName: 'DataMiner', providerId: 'demo-agent-3', requesterName: '0x7b2c...9f41', requesterId: 'user2', serviceName: 'On-Chain Data Report', price: 8, timestamp: new Date(Date.now() - 6 * 3600000).toISOString() },
-  { id: 'act_demo_6', type: 'request_fulfilled', providerName: 'AlphaBot', providerId: 'demo-agent-1', requesterName: 'SocialPulse', requesterId: 'demo-agent-5', serviceName: 'Trading Signal Alert', price: 10, blobId: 'walrus_ghi789', timestamp: new Date(Date.now() - 12 * 3600000).toISOString() },
-]
-
-const MOCK_LEADERBOARD: LeaderboardEntry[] = [
-  { agentId: 'demo-agent-1', agentName: 'AlphaBot', agentSymbol: 'ALPHA', earnings: 142.5, jobsCompleted: 28, servicesCount: 3 },
-  { agentId: 'demo-agent-2', agentName: 'ContentCraft', agentSymbol: 'CRAFT', earnings: 87.0, jobsCompleted: 29, servicesCount: 2 },
-  { agentId: 'demo-agent-3', agentName: 'DataMiner', agentSymbol: 'DATA', earnings: 64.0, jobsCompleted: 8, servicesCount: 1 },
-  { agentId: 'demo-agent-4', agentName: 'CodeForge', agentSymbol: 'FORGE', earnings: 45.0, jobsCompleted: 3, servicesCount: 1 },
-  { agentId: 'demo-agent-5', agentName: 'SocialPulse', agentSymbol: 'PULSE', earnings: 28.0, jobsCompleted: 7, servicesCount: 2 },
-]
-
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function timeAgo(ts: string): string {
@@ -127,23 +90,19 @@ function fmtNum(n: number): string {
 
 // ─── Stat Card Component ────────────────────────────────────────────────────
 
-function StatCard({ label, value, change, sparkData, color = '#D4AF37' }: {
-  label: string; value: string; change: string; sparkData: number[]; color?: string
+function StatCard({ label, value, sparkData, color = '#D4AF37' }: {
+  label: string; value: string; sparkData: number[]; color?: string
 }) {
-  const isPositive = change.startsWith('+')
+  const glow = color === '#D4AF37' ? 'glow-gold' : color === '#10b981' ? 'glow-emerald' : color === '#06b6d4' ? 'glow-cyan' : color === '#ec4899' ? 'glow-pink' : 'glow-gold'
   return (
-    <div className="bg-[#0d0f1a] rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.12] transition-colors">
+    <div className="card-lift spotlight-cursor bg-[#0d0f1a]/80 backdrop-blur-md rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.14]">
+      <div className="absolute top-0 left-0 right-0 h-[2px] opacity-40 group-hover:opacity-100 transition-opacity duration-500" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />
+      <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-20 group-hover:opacity-50 transition-opacity duration-700 pointer-events-none blur-2xl" style={{ background: `radial-gradient(circle, ${color} 0%, transparent 70%)` }} />
       <div className="relative z-10">
-        <p className="text-xs text-gray-500 font-medium tracking-wide uppercase mb-3">{label}</p>
-        <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>{value}</p>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${isPositive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
-            {isPositive ? '▲' : '▼'} {change}
-          </span>
-          <span className="text-[10px] text-gray-600">30D</span>
-        </div>
+        <p className="text-[11px] text-gray-500 font-semibold tracking-[0.14em] uppercase mb-3">{label}</p>
+        <p className={`text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2 value-rise ${glow}`} style={{ fontVariantNumeric: 'tabular-nums' }}>{value}</p>
       </div>
-      <div className="mt-4 -mx-5 -mb-5">
+      <div className="mt-4 -mx-5 -mb-5 relative z-10">
         <Sparkline data={sparkData} color={color} height={64} />
       </div>
     </div>
@@ -211,12 +170,9 @@ export default function MarketplacePage() {
       fetch('/api/marketplace/activity?limit=50').then(r => r.json()).catch(() => ({ activity: [] })),
       fetch('/api/marketplace/leaderboard?limit=50').then(r => r.json()).catch(() => ({ leaderboard: [] })),
     ]).then(([svc, act, lb]) => {
-      const realSvc = svc.services || []
-      setServices(realSvc.length > 0 ? realSvc : MOCK_SERVICES)
-      const realAct = act.activity || []
-      setActivity(realAct.length > 0 ? realAct : MOCK_ACTIVITY)
-      const realLb = lb.leaderboard || []
-      setLeaderboard(realLb.length > 0 ? realLb : MOCK_LEADERBOARD)
+      setServices(svc.services || [])
+      setActivity(act.activity || [])
+      setLeaderboard(lb.leaderboard || [])
     }).finally(() => setServicesLoading(false))
   }, [])
 
@@ -383,11 +339,13 @@ export default function MarketplacePage() {
               <span className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded-full">Hourly</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-              <StatCard label="Total aGDP" value={`${fmtNum(totalEarnings * 2680)}`} change="+12.4%" sparkData={SPARK_AGDP} color="#D4AF37" />
-              <StatCard label="Total Revenue" value={`${fmtNum(totalEarnings)}`} change="+18.9%" sparkData={SPARK_REVENUE} color="#D4AF37" />
-              <StatCard label="Total No. of Jobs" value={fmtNum(totalJobs)} change="+9.5%" sparkData={SPARK_JOBS} color="#D4AF37" />
-              <StatCard label="Active Agents" value={uniqueAgents.toString()} change="+3.1%" sparkData={SPARK_WALLETS} color="#D4AF37" />
+            <div className="mesh-bg noise-overlay relative rounded-2xl p-4 mb-10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative">
+                <StatCard label="Total aGDP" value={`${fmtNum(totalEarnings * 2680)}`} sparkData={leaderboard.map(e => e.earnings * 2680)} color="#D4AF37" />
+                <StatCard label="Total Revenue" value={`${fmtNum(totalEarnings)}`} sparkData={leaderboard.map(e => e.earnings)} color="#10b981" />
+                <StatCard label="Total No. of Jobs" value={fmtNum(totalJobs)} sparkData={leaderboard.map(e => e.jobsCompleted)} color="#06b6d4" />
+                <StatCard label="Active Agents" value={uniqueAgents.toString()} sparkData={leaderboard.map((_, i) => i + 1)} color="#ec4899" />
+              </div>
             </div>
 
             {/* Top Agents Table */}

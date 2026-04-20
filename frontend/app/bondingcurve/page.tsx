@@ -219,15 +219,21 @@ export default function BondingCurvePage() {
     volume: '1H Volume',
   }
 
+  // After a pool graduates, its real_sui_reserves balance is drained to seed the DEX pool,
+  // so the live reading is 0. Fall back to the threshold (≈ amount traded to reach graduation).
+  const tradedAmount = (t: PoolToken) => {
+    const live = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
+    const isCompleted = t.isCompleted ?? (t as any).isCompleted
+    if (isCompleted) return t.threshold ?? (t as any).thresholdSui ?? live
+    return live
+  }
   const totalSuiTraded = realTokens.reduce((s, t) => {
     const isAida = (t as any).pairToken === 'AIDA' || t.pairType === 'AIDA'
-    const amt = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
-    return isAida ? s : s + amt
+    return isAida ? s : s + tradedAmount(t)
   }, 0)
   const totalAidaTraded = realTokens.reduce((s, t) => {
     const isAida = (t as any).pairToken === 'AIDA' || t.pairType === 'AIDA'
-    const amt = t.realSuiRaised ?? (t as any).realSuiSui ?? 0
-    return isAida ? s + amt : s
+    return isAida ? s + tradedAmount(t) : s
   }, 0)
 
   // Sparkline data generators for stat cards
@@ -240,15 +246,18 @@ export default function BondingCurvePage() {
       {/* PLATFORM STATS */}
       <div className="pt-20 pb-2">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+          <div className="mesh-bg noise-overlay relative rounded-2xl p-4 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative">
             {/* Total Volume */}
-            <div className="bg-[#0d0f1a] rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.12] transition-colors">
+            <div className="card-lift spotlight-cursor bg-[#0d0f1a]/80 backdrop-blur-md rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.14]">
+              <div className="absolute top-0 left-0 right-0 h-[2px] opacity-40 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'linear-gradient(90deg, transparent, #D4AF37, transparent)' }} />
+              <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-20 group-hover:opacity-50 transition-opacity duration-700 pointer-events-none blur-2xl" style={{ background: 'radial-gradient(circle, #D4AF37 0%, transparent 70%)' }} />
               <div className="relative z-10">
-                <p className="text-xs text-gray-500 font-medium tracking-wide uppercase mb-3">Total Volume</p>
-                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalSuiTraded.toFixed(2)} SUI</p>
-                <p className="text-sm font-semibold text-[#D4AF37]">{totalAidaTraded.toLocaleString(undefined, { maximumFractionDigits: 0 })} AIDA</p>
+                <p className="text-[11px] text-gray-500 font-semibold tracking-[0.14em] uppercase mb-3">Total Volume</p>
+                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2 value-rise glow-gold" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalSuiTraded.toFixed(2)} SUI</p>
+                <p className="text-sm font-semibold text-[#D4AF37] mb-2">{totalAidaTraded.toLocaleString(undefined, { maximumFractionDigits: 0 })} AIDA</p>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ SUI Raised</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">SUI &amp; AIDA traded</span>
                   <span className="text-[10px] text-gray-600">All time</span>
                 </div>
               </div>
@@ -261,10 +270,12 @@ export default function BondingCurvePage() {
             </div>
 
             {/* Tokens Launched */}
-            <div className="bg-[#0d0f1a] rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.12] transition-colors">
+            <div className="card-lift spotlight-cursor bg-[#0d0f1a]/80 backdrop-blur-md rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.14]">
+              <div className="absolute top-0 left-0 right-0 h-[2px] opacity-40 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'linear-gradient(90deg, transparent, #06b6d4, transparent)' }} />
+              <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-20 group-hover:opacity-50 transition-opacity duration-700 pointer-events-none blur-2xl" style={{ background: 'radial-gradient(circle, #06b6d4 0%, transparent 70%)' }} />
               <div className="relative z-10">
-                <p className="text-xs text-gray-500 font-medium tracking-wide uppercase mb-3">Tokens Launched</p>
-                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>{realTokens.length || 0}</p>
+                <p className="text-[11px] text-gray-500 font-semibold tracking-[0.14em] uppercase mb-3">Tokens Launched</p>
+                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2 value-rise glow-cyan" style={{ fontVariantNumeric: 'tabular-nums' }}>{realTokens.length || 0}</p>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ Launched</span>
                   <span className="text-[10px] text-gray-600">All time</span>
@@ -279,10 +290,12 @@ export default function BondingCurvePage() {
             </div>
 
             {/* AIDA Staked */}
-            <div className="bg-[#0d0f1a] rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.12] transition-colors">
+            <div className="card-lift spotlight-cursor bg-[#0d0f1a]/80 backdrop-blur-md rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.14]">
+              <div className="absolute top-0 left-0 right-0 h-[2px] opacity-40 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'linear-gradient(90deg, transparent, #10b981, transparent)' }} />
+              <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-20 group-hover:opacity-50 transition-opacity duration-700 pointer-events-none blur-2xl" style={{ background: 'radial-gradient(circle, #10b981 0%, transparent 70%)' }} />
               <div className="relative z-10">
-                <p className="text-xs text-gray-500 font-medium tracking-wide uppercase mb-3">AIDA Staked</p>
-                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-1" style={{ fontVariantNumeric: 'tabular-nums' }}>{aidaStakedUsd}</p>
+                <p className="text-[11px] text-gray-500 font-semibold tracking-[0.14em] uppercase mb-3">AIDA Staked</p>
+                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-1 value-rise glow-emerald" style={{ fontVariantNumeric: 'tabular-nums' }}>{aidaStakedUsd}</p>
                 {aidaStakedDollar && <p className="text-sm text-gray-400 mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>{aidaStakedDollar}</p>}
                 {!aidaStakedDollar && <div className="mb-2" />}
                 <div className="flex items-center gap-2">
@@ -299,10 +312,12 @@ export default function BondingCurvePage() {
             </div>
 
             {/* Fees Distributed */}
-            <div className="bg-[#0d0f1a] rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.12] transition-colors">
+            <div className="card-lift spotlight-cursor bg-[#0d0f1a]/80 backdrop-blur-md rounded-2xl border border-white/[0.06] p-5 flex flex-col justify-between overflow-hidden relative group hover:border-white/[0.14]">
+              <div className="absolute top-0 left-0 right-0 h-[2px] opacity-40 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'linear-gradient(90deg, transparent, #ec4899, transparent)' }} />
+              <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-20 group-hover:opacity-50 transition-opacity duration-700 pointer-events-none blur-2xl" style={{ background: 'radial-gradient(circle, #ec4899 0%, transparent 70%)' }} />
               <div className="relative z-10">
-                <p className="text-xs text-gray-500 font-medium tracking-wide uppercase mb-3">Fees Distributed</p>
-                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>{feesDistributed}</p>
+                <p className="text-[11px] text-gray-500 font-semibold tracking-[0.14em] uppercase mb-3">Fees Distributed</p>
+                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2 value-rise glow-pink" style={{ fontVariantNumeric: 'tabular-nums' }}>{feesDistributed}</p>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ Fees</span>
                   <span className="text-[10px] text-gray-600">Cumulative</span>
@@ -315,6 +330,7 @@ export default function BondingCurvePage() {
                 </svg>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
