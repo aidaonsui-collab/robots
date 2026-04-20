@@ -1,12 +1,5 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/graduate",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/distribute-fees",
-      "schedule": "0 12 * * *"
-    }
-  ]
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install"
 }
