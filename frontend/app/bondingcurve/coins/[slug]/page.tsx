@@ -936,15 +936,31 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
           <span className="text-gray-500">Platform Fee (1%)</span>
           <span className="text-gray-400">{fee.toFixed(4)} ${pairType}</span>
         </div>
-        <div className="border-t border-gray-800/50 pt-2.5 flex justify-between items-center">
-          <span className="text-gray-500">Slippage</span>
-          <div className="flex items-center gap-1.5">
-            {[0.5, 1, 3].map((s) => (
+        <div className="border-t border-gray-800/50 pt-2.5 flex justify-between items-center gap-2">
+          <span className="text-gray-500 shrink-0">Slippage</span>
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {[0.5, 1, 3, 5, 10].map((s) => (
               <button key={s} onClick={() => setSlippage(s)}
                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${slippage === s ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40' : 'bg-[#14142a] text-gray-400 border border-white/5 hover:text-gray-200'}`}>
                 {s}%
               </button>
             ))}
+            <div className={`flex items-center rounded-lg text-xs font-semibold border transition-all ${![0.5, 1, 3, 5, 10].includes(slippage) ? 'bg-[#D4AF37]/20 text-[#D4AF37] border-[#D4AF37]/40' : 'bg-[#14142a] text-gray-400 border-white/5'}`}>
+              <input
+                type="number"
+                min="0"
+                max="50"
+                step="0.1"
+                placeholder="custom"
+                value={![0.5, 1, 3, 5, 10].includes(slippage) ? slippage : ''}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value)
+                  if (!isNaN(v) && v >= 0 && v <= 50) setSlippage(v)
+                }}
+                className="w-14 px-2 py-1 bg-transparent text-xs font-semibold focus:outline-none placeholder:text-gray-600 tabular-nums text-right"
+              />
+              <span className="pr-2">%</span>
+            </div>
           </div>
         </div>
       </div>
