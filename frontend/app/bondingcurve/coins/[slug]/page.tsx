@@ -32,6 +32,7 @@ import PriceChart, { PricePoint } from '@/components/coin/PriceChart'
 import GraduatedTokenPanel from '@/components/coin/GraduatedTokenPanel'
 import PerTokenStakePanel from '@/components/coin/PerTokenStakePanel'
 import TradingViewChart from '@/components/coin/TradingViewChart'
+import BubbleMap from '@/components/coin/BubbleMap'
 import { VideoEmbed } from '@/components/VideoEmbed'
 import { formatNumber, formatSui } from '@/lib/utils'
 import { fetchPoolToken, fetchPoolTrades, fetchSuiNSName, PoolToken, TradeEvent } from '@/lib/tokens'
@@ -1280,6 +1281,7 @@ function StakeTab({ token, poolData }: { token: typeof MOCK_TOKEN, poolData: Poo
 const TABS = [
   { id: 'txns', label: 'Txns', icon: List },
   { id: 'trade', label: 'Trade', icon: Zap },
+  { id: 'holders', label: 'Holders', icon: Users },
   { id: 'info', label: 'Info', icon: Info },
   { id: 'chat', label: 'Chat', icon: MessageSquare },
   { id: 'stake', label: 'Stake', icon: Lock },
@@ -1668,6 +1670,11 @@ export default function CoinPage() {
                 {activeTab === 'trade' && (
                   <div className="p-5">
                     <TradeTab token={token} poolData={poolData} pairType={pairType} onTradeSuccess={handleTradeSuccess} />
+                  </div>
+                )}
+                {activeTab === 'holders' && poolData?.coinType && (
+                  <div className="p-5">
+                    <BubbleMap coinType={poolData.coinType} symbol={token.symbol} poolId={poolData.poolId} />
                   </div>
                 )}
                 {activeTab === 'info' && <InfoTab token={token} coinType={poolData?.coinType} poolId={poolData?.poolId} creatorAddress={poolData?.creator} connectedAddress={connectedAddress} moonbagsPackageId={poolData?.moonbagsPackageId} />}
