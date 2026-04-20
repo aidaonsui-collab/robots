@@ -49,9 +49,12 @@ export async function GET(req: Request) {
     tx.setSender(adminAddress)
     tx.setGasBudget(100_000_000)
 
-    // collect::fee returns (Coin<X>, Coin<Y>) — must transfer or drop them
-    // Use tx.transferObjects to send both fee coins to the admin
-    const [coinX, coinY] = tx.moveCall({
+    // Mirror the working pattern from fix-pool/route.ts:
+    // collect::fee(pool, position, clock, version) — 4 args, returns (Coin<X>, Coin<Y>)
+    // Pool type = Pool<HERO,AIDA> → type args [HERO, AIDA]
+    const allCoins: any[] = []
+
+    const [feeCoinX, feeCoinY] = tx.moveCall({
       target: `${MOMENTUM_PACKAGE}::collect::fee`,
       typeArguments: [HERO_TYPE, AIDA_TYPE],
       arguments: [
@@ -61,8 +64,9 @@ export async function GET(req: Request) {
         tx.object(MMT_VERSION),
       ],
     })
+    allCoins.push(feeCoinX, feeCoinY)
 
-    tx.transferObjects([coinX, coinY], tx.pure.address(adminAddress))
+    tx.transferObjects(allCoins, tx.pure.address(adminAddress))
 
     const result = await client.signAndExecuteTransaction({
       transaction: tx,
@@ -72,12 +76,15 @@ export async function GET(req: Request) {
 
     const ok = result.effects?.status?.status === 'success'
 
-    // Extract amounts collected
-    let amounts = null
+    // Extract amounts from created coin objects
+    let amounts: {x?: string, y?: string} = {}
     if (ok && result.objectChanges) {
       const created = result.objectChanges.filter((c: any) => c.type === 'created')
-      const transferred = result.objectChanges.filter((c: any) => c.type === 'mutated' && c.objectType?.includes('Coin'))
-      amounts = { created: created.length, transferred: transferred.length }
+      for (const c of created) {
+        const t = c.objectType || ''
+        if (t.includes('::hero::HERO')) amounts.x = c.objectId
+        else if (t.includes('::aida::AIDA')) amounts.y = c.objectId
+      }
     }
 
     return NextResponse.json({
