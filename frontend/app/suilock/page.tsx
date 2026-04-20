@@ -9,7 +9,6 @@ import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
 const VESTING_PKG = process.env.NEXT_PUBLIC_VESTING_PKG || '0x93d1a123f8955c344d83d571048cf2d53ab790ba9c202391e4ef54e467574558'
 const PLATFORM_FEE = 1_000_000_000
 const SUI_COIN_TYPE = '0x2::sui::SUI'
-const AIDA_COIN_TYPE = '0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA'
 
 function coinType(t: string) { const m = t.match(/<(.+)>$/); return m ? m[1] : SUI_COIN_TYPE }
 function num(v: unknown) { return typeof v === 'number' ? v : typeof v === 'string' ? parseInt(v) : 0 }
@@ -58,27 +57,16 @@ export default function SuiLockPage() {
     const res: Lk[] = []
     const decimalsCache = new Map<string, number>()
     const getDecimals = async (tokenType: string): Promise<number> => {
-      // Fast paths for the two 9-decimal tokens we support natively.
       if (tokenType === SUI_COIN_TYPE) return 9
-      if (tokenType === AIDA_COIN_TYPE) return 9
       const cached = decimalsCache.get(tokenType)
       if (cached != null) return cached
-      // For every other token, assume 6 decimals — that's what the bonding
-      // curve launchpad's coin compiler template emits, and it covers every
-      // meme / AI-agent token on this platform. We still try CoinMetadata
-      // as a sanity check, but only trust it when it disagrees AND returns
-      // a plausible value (1..18). This sidesteps a known quirk where some
-      // compiler template revisions published CoinMetadata with decimals=9
-      // while the launchpad math treats the supply as 6-decimal (which made
-      // locked balances render 1000x too small).
+      // CoinMetadata is the canonical source for a token's decimals —
+      // that's what every wallet/explorer uses. Fall back to 6 only if the
+      // metadata object is missing or the RPC call fails.
       let decimals = 6
       try {
         const meta = await suiClient.getCoinMetadata({ coinType: tokenType })
-        if (meta && typeof meta.decimals === 'number' && meta.decimals >= 1 && meta.decimals <= 18) {
-          // Only override the 6-decimal default for non-9 metadata values —
-          // 9 is almost always a mislabel for launchpad tokens.
-          if (meta.decimals !== 9) decimals = meta.decimals
-        }
+        if (meta && typeof meta.decimals === 'number') decimals = meta.decimals
       } catch {}
       decimalsCache.set(tokenType, decimals)
       return decimals
