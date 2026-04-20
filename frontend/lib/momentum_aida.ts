@@ -1,5 +1,9 @@
 // Momentum CLMM integration — AIDA-paired pool creation
-// Adapted from lib/momentum.ts — uses AIDA as coinX instead of SUI
+//
+// Momentum requires coinX bytes < coinY bytes (BCS-sorted) when creating a pool.
+// HERO (0x9b…) < AIDA (0xce…) so for those pairs HERO is coinX, AIDA is coinY.
+// This module sorts the two types correctly on every call so `create_pool` and
+// `add_liquidity` don't abort with code 81 (`invalid_pool_coin_types_sorted`).
 
 import { SuiClient } from '@mysten/sui/client'
 import { Transaction } from '@mysten/sui/transactions'
@@ -29,6 +33,50 @@ function getAdminKeypair(): Ed25519Keypair {
   }
 }
 
+// Normalize a coin type string: pad the package address to 64 hex chars.
+// Required because Sui sometimes emits truncated-leading-zero addresses in
+// event.token_address, and the Momentum Move code compares full-length bytes.
+function normalizeType(tokenType: string): string {
+  const parts = tokenType.split('::')
+  if (parts.length < 3) return tokenType
+  const addr = parts[0].startsWith('0x') ? parts[0] : `0x${parts[0]}`
+  parts[0] = addr.slice(0, 2) + addr.slice(2).padStart(64, '0')
+  return parts.join('::')
+}
+
+interface SortedPair {
+  coinX: string         // normalized coin type used as X
+  coinY: string         // normalized coin type used as Y
+  decX: number
+  decY: number
+  aidaIsX: boolean      // true if AIDA sorts first (rare)
+  priceXY: number       // coinY per coinX (Momentum convention)
+}
+
+// Given the meme token type + decimals and the computed AIDA-per-token price,
+// return the coin ordering Momentum expects (BCS-sorted).
+function sortPair(tokenType: string, tokenDecimals: number, aidaPerToken: number): SortedPair {
+  const normAida = normalizeType(AIDA_TYPE)
+  const normToken = normalizeType(tokenType)
+  const aidaIsX = Buffer.compare(Buffer.from(normAida), Buffer.from(normToken)) < 0
+  if (aidaIsX) {
+    // AIDA = coinX, token = coinY. Momentum price = Y/X = token per AIDA = 1/aidaPerToken.
+    return {
+      coinX: normAida, coinY: normToken,
+      decX: AIDA_DECIMALS, decY: tokenDecimals,
+      aidaIsX: true,
+      priceXY: 1 / aidaPerToken,
+    }
+  }
+  // token = coinX, AIDA = coinY. Momentum price = Y/X = AIDA per token = aidaPerToken.
+  return {
+    coinX: normToken, coinY: normAida,
+    decX: tokenDecimals, decY: AIDA_DECIMALS,
+    aidaIsX: false,
+    priceXY: aidaPerToken,
+  }
+}
+
 export interface GraduationEvent {
   tokenType: string
   aidaAmount: bigint
@@ -54,13 +102,18 @@ export async function createMomentumPool(event: GraduationEvent): Promise<PoolCr
 
   const aidaFloat = Number(event.aidaAmount) / 10 ** AIDA_DECIMALS
   const tokenFloat = Number(event.tokenAmount) / 10 ** event.tokenDecimals
-  const price = aidaFloat / tokenFloat
+  const aidaPerToken = aidaFloat / tokenFloat
 
-  console.log(`[graduation] Creating AIDA/TOKEN Momentum pool:`)
+  const sorted = sortPair(event.tokenType, event.tokenDecimals, aidaPerToken)
+
+  console.log(`[graduation] Creating AIDA-paired Momentum pool:`)
   console.log(`  token: ${event.tokenType}`)
   console.log(`  AIDA: ${aidaFloat}`)
   console.log(`  tokens: ${tokenFloat}`)
-  console.log(`  price: ${price} AIDA per token`)
+  console.log(`  AIDA per token: ${aidaPerToken}`)
+  console.log(`  coinX: ${sorted.coinX}`)
+  console.log(`  coinY: ${sorted.coinY}`)
+  console.log(`  priceXY (Y per X): ${sorted.priceXY}`)
 
   try {
     const GAS_BUFFER_MIST = BigInt(300_000_000)
@@ -88,11 +141,11 @@ export async function createMomentumPool(event: GraduationEvent): Promise<PoolCr
     sdk.poolModule.createPool(
       tx1,
       DEFAULT_FEE_RATE,
-      price,
-      AIDA_TYPE,
-      event.tokenType,
-      AIDA_DECIMALS,
-      event.tokenDecimals,
+      sorted.priceXY,
+      sorted.coinX,
+      sorted.coinY,
+      sorted.decX,
+      sorted.decY,
       false,
     )
 
@@ -126,7 +179,7 @@ export async function createMomentumPool(event: GraduationEvent): Promise<PoolCr
       tokenType: event.tokenType,
       tokenDecimals: event.tokenDecimals,
       aidaAmount: event.aidaAmount,
-      price,
+      aidaPerToken,
       initDigest: result1.digest,
     })
   } catch (e: any) {
@@ -140,10 +193,10 @@ export async function addLiquidityToPool(opts: {
   tokenType: string
   tokenDecimals: number
   aidaAmount: bigint
-  price: number
+  aidaPerToken: number
   initDigest?: string
 }): Promise<PoolCreationResult> {
-  const { poolId, tokenType, tokenDecimals, aidaAmount, price } = opts
+  const { poolId, tokenType, tokenDecimals, aidaAmount, aidaPerToken } = opts
   if (!MOMENTUM_PACKAGE) return { success: false, error: 'MOMENTUM_PACKAGE_ID not configured' }
 
   const client = new SuiClient({ url: SUI_RPC })
@@ -157,19 +210,15 @@ export async function addLiquidityToPool(opts: {
     const Decimal = require('decimal.js')
 
     const MMT_PKG = MOMENTUM_PACKAGE
+    const sorted = sortPair(tokenType, tokenDecimals, aidaPerToken)
 
-    const parts = tokenType.split('::')
-    if (parts.length >= 3) {
-      const addr = parts[0].startsWith('0x') ? parts[0] : `0x${parts[0]}`
-      parts[0] = addr.slice(0, 2) + addr.slice(2).padStart(64, '0')
-    }
-    const normTokenType = parts.join('::')
-
+    // priceToSqrtPriceX64(price_Y_per_X, decX, decY). Use a wide range
+    // (100x above and 0.01x below) to ensure the initial price fits.
     const sqrtLower = TickMath.priceToSqrtPriceX64(
-      new Decimal(price * 100), AIDA_DECIMALS, tokenDecimals
+      new Decimal(sorted.priceXY * 0.01), sorted.decX, sorted.decY
     ).toString()
     const sqrtUpper = TickMath.priceToSqrtPriceX64(
-      new Decimal(price * 0.01), AIDA_DECIMALS, tokenDecimals
+      new Decimal(sorted.priceXY * 100), sorted.decX, sorted.decY
     ).toString()
 
     const aidaCoins = await client.getCoins({ owner: adminAddress, coinType: AIDA_TYPE })
@@ -186,7 +235,7 @@ export async function addLiquidityToPool(opts: {
     const availableAida = BigInt(aidaBal.totalBalance)
     const aidaToAdd = availableAida > aidaAmount ? aidaAmount : availableAida
 
-    console.log(`[graduation] Adding ${Number(aidaToAdd) / 1e9} AIDA to pool ${poolId}`)
+    console.log(`[graduation] Adding ${Number(aidaToAdd) / 1e9} AIDA + all ${tokenType.split('::').pop()} to pool ${poolId}`)
 
     const tx2 = new Transaction()
     tx2.setSender(adminAddress)
@@ -210,7 +259,7 @@ export async function addLiquidityToPool(opts: {
 
     const [positionObj] = tx2.moveCall({
       target: `${MMT_PKG}::liquidity::open_position`,
-      typeArguments: [AIDA_TYPE, normTokenType],
+      typeArguments: [sorted.coinX, sorted.coinY],
       arguments: [
         tx2.object(poolId),
         alignedLower,
@@ -219,25 +268,31 @@ export async function addLiquidityToPool(opts: {
       ],
     })
 
+    // Prepare AIDA coin (merged + split to exact amount)
     const primaryAida = tx2.object(aidaCoins.data[0].coinObjectId)
     if (aidaCoins.data.length > 1) {
       tx2.mergeCoins(primaryAida, aidaCoins.data.slice(1).map((c: any) => tx2.object(c.coinObjectId)))
     }
     const [aidaCoin] = tx2.splitCoins(primaryAida, [tx2.pure.u64(aidaToAdd)])
 
+    // Prepare meme token coin (merged)
     const primaryToken = tx2.object(tokenCoins.data[0].coinObjectId)
     if (tokenCoins.data.length > 1) {
       tx2.mergeCoins(primaryToken, tokenCoins.data.slice(1).map((c: any) => tx2.object(c.coinObjectId)))
     }
 
+    // Pass the coins in X,Y order matching the sorted type arguments.
+    const coinXArg = sorted.aidaIsX ? aidaCoin : primaryToken
+    const coinYArg = sorted.aidaIsX ? primaryToken : aidaCoin
+
     const [coinA, coinB] = tx2.moveCall({
       target: `${MMT_PKG}::liquidity::add_liquidity`,
-      typeArguments: [AIDA_TYPE, normTokenType],
+      typeArguments: [sorted.coinX, sorted.coinY],
       arguments: [
         tx2.object(poolId),
         positionObj,
-        aidaCoin,
-        primaryToken,
+        coinXArg,
+        coinYArg,
         tx2.pure.u64(0),
         tx2.pure.u64(0),
         tx2.object(CLOCK),
@@ -284,9 +339,16 @@ export async function collectMomentumFees(
   try {
     const tx = new Transaction()
     tx.setSender(keypair.getPublicKey().toSuiAddress())
+    // NOTE: collect::fee type args must also be BCS-sorted. For an AIDA pool
+    // where coinY type byte-compares lower than AIDA, pass them swapped.
+    // Caller is responsible for supplying coinYType as the non-AIDA side.
+    const normAida = normalizeType(AIDA_TYPE)
+    const normY = normalizeType(coinYType)
+    const aidaFirst = Buffer.compare(Buffer.from(normAida), Buffer.from(normY)) < 0
+    const typeArgs = aidaFirst ? [normAida, normY] : [normY, normAida]
     tx.moveCall({
       target: `${MOMENTUM_PACKAGE}::collect::fee`,
-      typeArguments: [AIDA_TYPE, coinYType],
+      typeArguments: typeArgs,
       arguments: [tx.object(poolId), tx.object(positionId), tx.object(CLOCK)],
     })
     const result = await client.signAndExecuteTransaction({
