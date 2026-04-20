@@ -289,10 +289,11 @@ export async function fetchPoolToken(poolIdOrCoinType: string): Promise<PoolToke
     const price = Number(virtualSui) / 1e9 / (Number(virtualToken) / 1e6)
     const realSuiSui = Number(realSuiMist) / 1e9
     const thresholdSui = Number(thresholdMist) / 1e9
-    const progress = thresholdMist > 0n ? (Number(realSuiMist) / Number(thresholdMist)) * 100 : 0
-    // Use the tradeable supply (R) not total minted (2R) for MC.
-    // MC = spot price × R — launch MC = threshold/4 × SUI_price ≈ $1.1K at 2000 SUI threshold.
-    const totalSupply = Number(remainTokenRaw) / 1e6  // R tokens
+    const progress = isCompleted
+     ? 100
+     : thresholdMist > 0n ? (Number(realSuiMist) / Number(thresholdMist)) * 100 : 0
+    // Post-graduation on-chain balance is zero — fall back to 1B standard launch supply.
+    const totalSupply = remainTokenRaw > 0n ? Number(remainTokenRaw) / 1e6 : 1_000_000_000
 
     // 2. Fetch creation event for metadata. Query both legacy and v11
     //    package namespaces since v11 emits its own event types.
@@ -557,10 +558,11 @@ export async function fetchAllPoolTokens(): Promise<PoolToken[]> {
         const price       = Number(virtualSui) / 1e9 / (Number(virtualToken) / 1e6)
         const realSuiSui  = Number(realSuiMist) / 1e9
         const thresholdSui = Number(thresholdMist) / 1e9
-        const progress    = thresholdMist > 0n ? (Number(realSuiMist) / Number(thresholdMist)) * 100 : 0
-        // Use tradeable supply (R) not total minted (2R) — second R is locked for DEX LP.
-        // MC = spot price × R — launch MC = threshold/4 × SUI_price ≈ $1.1K at 2000 SUI threshold.
-        const totalSupply = Number(remainTokenRaw) / 1e6  // R tokens
+        const progress = isCompleted
+         ? 100
+         : thresholdMist > 0n ? (Number(realSuiMist) / Number(thresholdMist)) * 100 : 0
+        // Post-graduation on-chain balance is zero — fall back to 1B standard launch supply.
+        const totalSupply = remainTokenRaw > 0n ? Number(remainTokenRaw) / 1e6 : 1_000_000_000
 
         // Compute volume1h and priceChange24h from trade events
         const poolTrades = tradesByPool.get(poolId) ?? []
