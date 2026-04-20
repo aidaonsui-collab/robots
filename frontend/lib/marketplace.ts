@@ -22,7 +22,7 @@ export interface ServiceListing {
   agentAvatar?: string
   name: string
   description: string
-  price: number          // SUI
+  price: number          // USDC (whole-USDC units, e.g. 5 = 5.00 USDC)
   category: string
 }
 
@@ -37,7 +37,7 @@ export interface ServiceRequest {
   requesterType: 'agent' | 'user'
   requesterName: string
   prompt: string           // What they want (additional context beyond service description)
-  price: number            // Agreed price in SUI
+  price: number            // Agreed price in USDC
   status: RequestStatus
   // USDC settlement (populated by /api/marketplace/settle)
   paymentMethod?: 'usdc'

@@ -341,8 +341,8 @@ export default function MarketplacePage() {
 
             <div className="mesh-bg noise-overlay relative rounded-2xl p-4 mb-10">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative">
-                <StatCard label="Total aGDP" value={`${fmtNum(totalEarnings * 2680)}`} sparkData={leaderboard.map(e => e.earnings * 2680)} color="#D4AF37" />
-                <StatCard label="Total Revenue" value={`${fmtNum(totalEarnings)}`} sparkData={leaderboard.map(e => e.earnings)} color="#10b981" />
+                <StatCard label="Total aGDP" value={`$${fmtNum(totalEarnings)}`} sparkData={leaderboard.map(e => e.earnings)} color="#D4AF37" />
+                <StatCard label="Total Revenue" value={`${fmtNum(totalEarnings)} USDC`} sparkData={leaderboard.map(e => e.earnings)} color="#10b981" />
                 <StatCard label="Total No. of Jobs" value={fmtNum(totalJobs)} sparkData={leaderboard.map(e => e.jobsCompleted)} color="#06b6d4" />
                 <StatCard label="Active Agents" value={uniqueAgents.toString()} sparkData={leaderboard.map((_, i) => i + 1)} color="#ec4899" />
               </div>
@@ -393,7 +393,7 @@ export default function MarketplacePage() {
                           {/* Total aGDP */}
                           <div className="col-span-2 text-right">
                             <span className="text-sm font-semibold text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                              ${fmtNum(entry.earnings * 2680)}
+                              ${fmtNum(entry.earnings)}
                             </span>
                           </div>
 
@@ -405,7 +405,7 @@ export default function MarketplacePage() {
                           {/* Revenue */}
                           <div className="col-span-2 text-right">
                             <span className="text-sm text-gray-300" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                              {entry.earnings.toFixed(2)} SUI
+                              {entry.earnings.toFixed(2)} USDC
                             </span>
                           </div>
 
@@ -443,11 +443,11 @@ export default function MarketplacePage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-sm font-medium text-white truncate">{entry.agentName}</p>
-                                <span className="text-sm font-semibold text-white flex-shrink-0" style={{ fontVariantNumeric: 'tabular-nums' }}>${fmtNum(entry.earnings * 2680)}</span>
+                                <span className="text-sm font-semibold text-white flex-shrink-0" style={{ fontVariantNumeric: 'tabular-nums' }}>${fmtNum(entry.earnings)}</span>
                               </div>
                               <div className="flex items-center justify-between gap-2 mt-0.5">
                                 <span className="text-[11px] text-gray-500">${entry.agentSymbol}</span>
-                                <span className="text-xs text-gray-400" style={{ fontVariantNumeric: 'tabular-nums' }}>{entry.earnings.toFixed(2)} SUI</span>
+                                <span className="text-xs text-gray-400" style={{ fontVariantNumeric: 'tabular-nums' }}>{entry.earnings.toFixed(2)} USDC</span>
                               </div>
                             </div>
                           </div>
@@ -551,7 +551,7 @@ export default function MarketplacePage() {
                       {/* Category + Price */}
                       <div className="flex items-center justify-between mb-4">
                         <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.04] text-gray-500 uppercase tracking-wide font-medium">{svc.category}</span>
-                        <span className="text-lg font-bold text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{svc.price} <span className="text-xs text-gray-500 font-normal">SUI</span></span>
+                        <span className="text-lg font-bold text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{svc.price} <span className="text-xs text-gray-500 font-normal">USDC</span></span>
                       </div>
 
                       {/* Hire — x402 payment flow */}
@@ -721,7 +721,7 @@ export default function MarketplacePage() {
                         {/* Amount */}
                         <div className="col-span-1 text-right">
                           <span className="text-sm font-semibold text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{evt.price}</span>
-                          <span className="text-[10px] text-gray-600 ml-1">SUI</span>
+                          <span className="text-[10px] text-gray-600 ml-1">USDC</span>
                         </div>
 
                         {/* Storage */}
@@ -767,7 +767,7 @@ export default function MarketplacePage() {
                             </div>
                             <div className="flex-shrink-0 text-right">
                               <span className="text-sm font-semibold text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{evt.price}</span>
-                              <span className="text-[10px] text-gray-600 ml-1">SUI</span>
+                              <span className="text-[10px] text-gray-600 ml-1">USDC</span>
                             </div>
                           </div>
                           <p className="text-xs text-gray-400 truncate">{evt.serviceName}</p>

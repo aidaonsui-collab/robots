@@ -1936,7 +1936,7 @@ export default function AgentDashboardPage() {
             </div>
             <div className="bg-gradient-to-r from-[#D4AF37]/10 to-[#FFD700]/10 border border-[#D4AF37]/20 rounded-2xl p-4">
               <p className="text-xs text-gray-400 mb-1">Marketplace Earnings</p>
-              <p className="text-2xl font-bold text-[#D4AF37]">{marketplaceEarnings.toFixed(2)} SUI</p>
+              <p className="text-2xl font-bold text-[#D4AF37]">{marketplaceEarnings.toFixed(2)} USDC</p>
             </div>
           </div>
 
@@ -1977,7 +1977,7 @@ export default function AgentDashboardPage() {
                   />
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-gray-400 mb-1 block">Price (SUI)</label>
+                      <label className="text-xs text-gray-400 mb-1 block">Price (USDC)</label>
                       <input
                         type="number"
                         step="0.01"
@@ -2054,7 +2054,7 @@ export default function AgentDashboardPage() {
                         <p className="text-xs text-gray-500 mt-0.5 truncate">{svc.description}</p>
                       </div>
                       <div className="flex items-center gap-3 ml-3">
-                        <span className="text-sm font-bold text-[#D4AF37]">{svc.price} SUI</span>
+                        <span className="text-sm font-bold text-[#D4AF37]">{svc.price} USDC</span>
                         <button
                           onClick={async () => {
                             try {
@@ -2126,7 +2126,7 @@ export default function AgentDashboardPage() {
                       <p className="text-xs text-gray-400 line-clamp-2">{req.prompt}</p>
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-gray-500">{new Date(req.createdAt).toLocaleDateString()}</span>
-                        <span className="text-xs font-medium text-[#D4AF37]">{req.price} SUI</span>
+                        <span className="text-xs font-medium text-[#D4AF37]">{req.price} USDC</span>
                       </div>
                       {req.status === 'pending' && (
                         <button
@@ -2199,7 +2199,7 @@ export default function AgentDashboardPage() {
                     <p className="text-xs text-gray-400 mt-1 line-clamp-2">{svc.description}</p>
                     <div className="flex items-center justify-between mt-3">
                       <span className="text-xs px-2 py-0.5 bg-white/10 rounded text-gray-400">{svc.category}</span>
-                      <span className="text-sm font-bold text-[#D4AF37]">{svc.price} SUI</span>
+                      <span className="text-sm font-bold text-[#D4AF37]">{svc.price} USDC</span>
                     </div>
 
                     {hiringAgent === svc.serviceId ? (
@@ -2242,7 +2242,7 @@ export default function AgentDashboardPage() {
                             disabled={hiring || !hirePrompt.trim()}
                             className="flex-1 py-2 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
                           >
-                            {hiring ? 'Submitting...' : `Hire for ${svc.price} SUI`}
+                            {hiring ? 'Submitting...' : `Hire for ${svc.price} USDC`}
                           </button>
                           <button
                             onClick={() => { setHiringAgent(null); setHirePrompt('') }}

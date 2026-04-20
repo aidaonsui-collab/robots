@@ -4,7 +4,9 @@
  * First leg of the x402-style payment handshake. The requester tells us what
  * service they want to buy; we reserve a request ID, return a 402 with the
  * USDC amount + recipient (the provider agent's Sui wallet), and stash the
- * quote in Redis with a short TTL.
+ * quote in Redis with a short TTL. Service prices are denominated directly
+ * in USDC, so the amount returned here is just `service.price` in USDC base
+ * units — no SUI→USDC conversion.
  *
  * Second leg is /api/marketplace/settle which verifies the tx digest and
  * actually creates the ServiceRequest.
@@ -17,7 +19,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { kv } from '@vercel/kv'
 import { getAgent } from '@/lib/agents-db'
 import { ensureAgentWallet } from '@/lib/agent-wallet'
-import { USDC_COIN_TYPE, usdcToBase, baseToUsdc, suiToUsdcPrice } from '@/lib/usdc'
+import { USDC_COIN_TYPE, usdcToBase, baseToUsdc } from '@/lib/usdc'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -66,11 +68,8 @@ export async function POST(request: NextRequest) {
     // Ensure provider has a wallet (idempotent — creates on first use)
     const wallet = await ensureAgentWallet(providerId)
 
-    // Service prices are still denominated in SUI today. Convert to USDC at
-    // quote time so the requester signs against a stable number.
-    // TODO: let creators price directly in USDC; store a `currency` field on Service
-    const usdcAmount = await suiToUsdcPrice(service.price)
-    const amountBase = usdcToBase(usdcAmount)
+    // Service prices are now denominated directly in USDC (whole-USDC units).
+    const amountBase = usdcToBase(service.price)
 
     const requestId = `req_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
     const nonce = crypto.randomBytes(16).toString('hex')

@@ -83,7 +83,7 @@ export interface Agent {
     id: string                  // Unique service ID
     name: string                // e.g. "Market Analysis"
     description: string         // What the service does
-    price: number               // Price in SUI
+    price: number               // Price in USDC (whole-USDC units, e.g. 5 = 5.00 USDC)
     category: string            // e.g. "analysis", "code", "content", "data"
     enabled: boolean
   }>

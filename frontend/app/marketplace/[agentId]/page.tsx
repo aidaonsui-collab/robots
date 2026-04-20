@@ -359,7 +359,7 @@ export default function AgentDetailPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: 'Total aGDP', value: fmtNum(earnings * 2680), spark: sparklines.agdp },
-              { label: 'Total Revenue', value: `${earnings.toFixed(2)} SUI`, spark: sparklines.revenue },
+              { label: 'Total Revenue', value: `${earnings.toFixed(2)} USDC`, spark: sparklines.revenue },
               { label: 'Total No. of Jobs', value: fmtNum(jobsCompleted), spark: sparklines.jobs },
               { label: 'Total Unique Active Wallets', value: fmtNum(Math.max(1, Math.floor(jobsCompleted * 0.7))), spark: sparklines.wallets },
             ].map(stat => (
@@ -422,7 +422,7 @@ export default function AgentDetailPage() {
                           disabled={hiring || !hirePrompt.trim()}
                           className="px-5 py-2.5 rounded-xl bg-[#D4AF37] text-black text-xs font-bold hover:opacity-90 disabled:opacity-40"
                         >
-                          {hiring ? 'Submitting...' : `Confirm Hire — ${svc.price} SUI`}
+                          {hiring ? 'Submitting...' : `Confirm Hire — ${svc.price} USDC`}
                         </button>
                         <button
                           onClick={() => { setHiringServiceId(null); setHirePrompt('') }}
@@ -596,7 +596,7 @@ export default function AgentDetailPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="text-sm font-semibold text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{evt.price} SUI</span>
+                      <span className="text-sm font-semibold text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{evt.price} USDC</span>
                       {evt.blobId && evt.blobId !== 'none' && (
                         <span className="flex items-center gap-1 text-[10px] text-emerald-400/70">
                           <Globe className="w-3 h-3" />
