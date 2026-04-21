@@ -357,7 +357,11 @@ export async function fetchAllGifts(client: SuiClient): Promise<GiftEvent[]> {
 
 export function formatAmount(raw: string | number, decimals: number): string {
   const n = typeof raw === 'number' ? raw : Number(raw)
-  return (n / Math.pow(10, decimals)).toFixed(Math.min(4, decimals))
+  const s = (n / Math.pow(10, decimals)).toFixed(Math.min(4, decimals))
+  // Strip trailing zeros after the decimal point (and the point itself if
+  // nothing's left), so `1.0000` renders as `1`, `1.2500` as `1.25`, while
+  // whole numbers without a decimal part pass through untouched.
+  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s
 }
 
 export function tokenConfigFor(typeStr: string): CultureTokenOption | undefined {
