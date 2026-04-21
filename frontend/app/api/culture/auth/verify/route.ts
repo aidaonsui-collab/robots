@@ -4,6 +4,11 @@
  * Second leg of the X OAuth2 PKCE flow. Exchanges the code for an access
  * token, fetches the logged-in X username, and issues a short-lived
  * verifyToken the client can present back to /auth/check at claim time.
+ *
+ * Supports both public and confidential X OAuth 2.0 clients. Confidential
+ * clients require HTTP Basic auth with `client_id:client_secret` on the
+ * token exchange; public clients send only form params. We auto-detect
+ * based on whether X_OAUTH_CLIENT_SECRET is set.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -21,8 +26,9 @@ function deriveRedirectUri(): string {
   return base ? `${base}/airdrops/callback` : ''
 }
 
-const CLIENT_ID = process.env.X_OAUTH_CLIENT_ID || ''
-const REDIRECT_URI = deriveRedirectUri()
+const CLIENT_ID     = process.env.X_OAUTH_CLIENT_ID || ''
+const CLIENT_SECRET = process.env.X_OAUTH_CLIENT_SECRET || ''
+const REDIRECT_URI  = deriveRedirectUri()
 
 interface PendingState {
   codeVerifier: string
@@ -49,6 +55,15 @@ export async function POST(req: NextRequest) {
     }
     await kv.del(key)
 
+    // Confidential clients (X Dev Portal → "Confidential client" on) require
+    // HTTP Basic auth on the token endpoint; public clients don't.
+    const isConfidential = CLIENT_SECRET.length > 0
+    const tokenHeaders: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' }
+    if (isConfidential) {
+      const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')
+      tokenHeaders['Authorization'] = `Basic ${basic}`
+    }
+
     const tokenParams = new URLSearchParams({
       code: String(code),
       grant_type: 'authorization_code',
@@ -58,12 +73,17 @@ export async function POST(req: NextRequest) {
     })
     const tokenResp = await fetch('https://api.twitter.com/2/oauth2/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: tokenHeaders,
       body: tokenParams,
     })
     const tokenData = await tokenResp.json().catch(() => ({}))
     if (!tokenData.access_token) {
-      console.error('[culture/auth/verify] token exchange failed:', tokenData, 'redirect_uri was', REDIRECT_URI)
+      console.error(
+        '[culture/auth/verify] token exchange failed:',
+        tokenData,
+        'redirect_uri was', REDIRECT_URI,
+        'confidential:', isConfidential
+      )
       return NextResponse.json({
         error: 'Failed to get access token: ' + (tokenData.error_description || tokenData.error || 'unknown'),
       }, { status: 400 })
