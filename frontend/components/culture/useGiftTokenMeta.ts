@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
-import { CULTURE_TOKENS, GiftEvent, normalizeCoinType, tickerFrom } from '@/lib/culture'
+import { CULTURE_TOKENS, KNOWN_COIN_META, GiftEvent, normalizeCoinType, tickerFrom } from '@/lib/culture'
 
 export interface TokenMeta {
   decimals: number
@@ -12,6 +12,13 @@ export interface TokenMeta {
 const cache = new Map<string, TokenMeta>()
 for (const t of CULTURE_TOKENS) {
   cache.set(t.type, { decimals: t.decimals, symbol: t.symbol })
+}
+// Safety net — ensures popular non-9-decimal coins (e.g. DEEP) render
+// correctly even when the fullnode's CoinMetadata endpoint 404s.
+for (const k of KNOWN_COIN_META) {
+  if (!cache.has(k.type)) {
+    cache.set(k.type, { decimals: k.decimals, symbol: k.symbol })
+  }
 }
 
 export function useGiftTokenMeta(gifts: GiftEvent[]) {

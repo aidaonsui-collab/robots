@@ -37,6 +37,19 @@ export const CULTURE_TOKENS: CultureTokenOption[] = [
   { symbol: 'USDC', type: USDC_COIN_TYPE, decimals: 6, label: 'USDC' },
 ]
 
+// Safety-net registry for popular custom coins. If the fullnode's
+// `getCoinMetadata` returns `null` (happens intermittently for DeepBook
+// tokens and some native coins under load), the live-lookup path can't
+// tell us decimals, and the code would silently default to 9. That
+// renders a 6-decimal coin like DEEP as `0.0010` for every 1 token sent.
+// Seeding known-correct values keeps the display right even when the
+// RPC hiccups. Add entries here only after verifying the type + decimals
+// on-chain.
+export const KNOWN_COIN_META: Array<{ type: string; symbol: string; decimals: number }> = [
+  // DeepBook native token — 6 decimals.
+  { type: '0xdeeb7a4662eec9f2f3def03fb937a663dddaa913c14aa9ea9f3adad8e1c27b9e::deep::DEEP', symbol: 'DEEP', decimals: 6 },
+]
+
 // ── Coin-type normalisation ──────────────────────────────────────────────
 
 export function normalizeCoinType(raw: unknown): string {
@@ -79,6 +92,12 @@ export interface TokenMeta {
 const coinMetaCache = new Map<string, TokenMeta>()
 for (const t of CULTURE_TOKENS) {
   coinMetaCache.set(t.type, { decimals: t.decimals, symbol: t.symbol })
+}
+for (const k of KNOWN_COIN_META) {
+  // Don't overwrite preset entries.
+  if (!coinMetaCache.has(k.type)) {
+    coinMetaCache.set(k.type, { decimals: k.decimals, symbol: k.symbol })
+  }
 }
 const coinMetaInflight = new Map<string, Promise<TokenMeta>>()
 
@@ -190,23 +209,54 @@ export async function fetchGiftCoinType(client: SuiClient, giftId: string): Prom
   if (existing) return existing
 
   const p = (async () => {
+    // Helper: try to extract the inner coin type from a string that
+    // contains `::balance::Balance<…>`. Uses non-greedy capture so nested
+    // `>` from outer wrappers (like `Field<K, Balance<T>>`) don't poison
+    // the result.
+    const extractBalanceInner = (s: string): string => {
+      const m = s.match(/::balance::Balance<(.+?)>/)
+      if (!m) return ''
+      return normalizeCoinType(m[1])
+    }
+
     try {
       const res = await client.getDynamicFields({ parentId: giftId })
-      for (const f of res.data || []) {
+      const fields = res.data || []
+
+      // Pass 1 — `objectType` on the DF info. In most Sui SDK versions this
+      // is the VALUE type (`0x2::balance::Balance<T>`), but some versions /
+      // fullnodes return the wrapping `Field<K, Balance<T>>`. Non-greedy
+      // regex handles both.
+      for (const f of fields) {
         const ot: string = (f as any).objectType || ''
-        // `objectType` is the wrapping Field<K, Balance<T>> type, so the
-        // string ends in `>>`. A greedy match would keep one `>` inside
-        // the capture — use non-greedy and stop at the first `>`, which
-        // is always the closing bracket of Balance<…> for concrete coin
-        // types (coin types never contain `>`).
-        const m = ot.match(/::balance::Balance<(.+?)>/)
-        if (m) {
-          const coinType = normalizeCoinType(m[1])
+        const coinType = extractBalanceInner(ot)
+        if (coinType) {
+          giftCoinTypeCache.set(giftId, coinType)
+          return coinType
+        }
+      }
+
+      // Pass 2 — some RPCs hand back `objectType` as just `Field` with no
+      // generics inlined. Fall back to fetching each DF object and reading
+      // its concrete type off the object header.
+      for (const f of fields) {
+        const fid = (f as any).objectId
+        if (!fid) continue
+        try {
+          const obj = await client.getObject({ id: fid, options: { showType: true } })
+          const t = obj?.data?.type || ''
+          const coinType = extractBalanceInner(t)
           if (coinType) {
             giftCoinTypeCache.set(giftId, coinType)
             return coinType
           }
-        }
+        } catch { /* try next field */ }
+      }
+
+      if (typeof window !== 'undefined' && fields.length) {
+        // One-time surface so bad shapes show up in the console instead
+        // of silently decimal-defaulting to 9.
+        console.warn('[culture] could not extract Balance<T> from gift DFs', giftId, fields)
       }
     } catch {
       // fall through — caller will fall back to whatever it has
