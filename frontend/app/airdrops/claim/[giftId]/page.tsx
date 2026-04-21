@@ -18,6 +18,7 @@ import {
   shortenAddr,
   formatAmount,
   resolveCoinMeta,
+  detectRecipientKind,
   TokenMeta,
   GiftEvent,
 } from '@/lib/culture'
@@ -28,13 +29,23 @@ const ConnectButton = dynamicImport(
   { ssr: false }
 )
 
-type Step = 'loading' | 'needs-connect' | 'needs-verify' | 'verifying' | 'ready' | 'claiming' | 'done' | 'error'
+type Step =
+  | 'loading'
+  | 'needs-connect'
+  | 'needs-verify'          // X-handle gift — needs OAuth
+  | 'suins-checking'        // .sui gift — resolving on-chain
+  | 'verifying'             // X OAuth in flight (redirect imminent)
+  | 'ready'
+  | 'claiming'
+  | 'done'
+  | 'error'
 
-// States that the gift-load effect is allowed to enter from. Anything
-// else (e.g. `ready` set by the sessionStorage effect after a callback
-// redirect, or `claiming` while a tx is in flight) should not be
-// clobbered when fetchGiftById resolves.
-const LOAD_TRANSITION_ALLOWED: Step[] = ['loading', 'needs-connect', 'needs-verify']
+const LOAD_TRANSITION_ALLOWED: Step[] = ['loading', 'needs-connect', 'needs-verify', 'suins-checking']
+
+// Sentinel value for verifyToken when the user proved ownership via
+// SuiNS resolution rather than X OAuth. executeClaim checks for this
+// and skips the /auth/check server-side handshake.
+const SUINS_VERIFIED_TOKEN = '__suins_verified__'
 
 export default function ClaimPage() {
   const params = useParams<{ giftId: string }>()
@@ -51,9 +62,10 @@ export default function ClaimPage() {
   const [verifiedAs, setVerifiedAs] = useState<string | null>(null)
   const [claimDigest, setClaimDigest] = useState<string | null>(null)
 
-  // Pick up a verifyToken stashed by the /airdrops/callback page. Run
-  // this FIRST so a subsequent fetchGiftById resolution can't clobber
-  // an already-advanced `ready` state.
+  const isSuinsGift = gift ? detectRecipientKind(gift.recipientHandle) === 'sui' : false
+
+  // Pick up a verifyToken stashed by /airdrops/callback. Runs first so
+  // the gift-load effect can't clobber an already-advanced `ready`.
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!giftId) return
@@ -68,12 +80,9 @@ export default function ClaimPage() {
       setVerifyToken(stashed.verifyToken)
       setVerifiedAs(stashed.username)
       setStep('ready')
-    } catch { /* ignore — user will re-verify */ }
+    } catch { /* ignore */ }
   }, [giftId])
 
-  // Load gift metadata. Only advance to needs-connect/needs-verify if
-  // we're still in an early pre-verify state — the sessionStorage effect
-  // above may have already promoted us to `ready`.
   useEffect(() => {
     if (!giftId) return
     fetchGiftById(suiClient, giftId).then(g => {
@@ -81,9 +90,12 @@ export default function ClaimPage() {
       setGift(g)
       if (g.claimed) { setError('This gift has already been claimed'); setStep('error'); return }
       if (g.isExpired) { setError('This gift has expired and refunded to the sender'); setStep('error'); return }
+
+      const giftIsSuins = detectRecipientKind(g.recipientHandle) === 'sui'
       setStep(prev => {
         if (!LOAD_TRANSITION_ALLOWED.includes(prev)) return prev
-        return account?.address ? 'needs-verify' : 'needs-connect'
+        if (!account?.address) return 'needs-connect'
+        return giftIsSuins ? 'suins-checking' : 'needs-verify'
       })
     }).catch(e => { setError(e?.message || 'Failed to load gift'); setStep('error') })
   }, [giftId, suiClient, account?.address])
@@ -98,8 +110,40 @@ export default function ClaimPage() {
   }, [gift?.tokenType, suiClient])
 
   useEffect(() => {
-    if (step === 'needs-connect' && account?.address) setStep('needs-verify')
-  }, [account?.address, step])
+    if (step !== 'needs-connect' || !account?.address || !gift) return
+    setStep(isSuinsGift ? 'suins-checking' : 'needs-verify')
+  }, [account?.address, step, gift, isSuinsGift])
+
+  // SuiNS ownership check: resolve the .sui name's target address and
+  // compare to the connected wallet. No server round-trip, no OAuth.
+  useEffect(() => {
+    if (step !== 'suins-checking') return
+    if (!gift || !account?.address) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const target = await suiClient.resolveNameServiceAddress({ name: gift.recipientHandle })
+        if (cancelled) return
+        if (target && target.toLowerCase() === account.address.toLowerCase()) {
+          setVerifyToken(SUINS_VERIFIED_TOKEN)
+          setVerifiedAs(gift.recipientHandle)
+          setStep('ready')
+          return
+        }
+        const ownerLabel = target ? shortenAddr(target) : 'nothing'
+        setError(
+          `This gift is for ${gift.recipientHandle}, which currently resolves to ${ownerLabel}. ` +
+          `You're connected as ${shortenAddr(account.address)}. Switch to the wallet that owns ${gift.recipientHandle} and try again.`
+        )
+        setStep('error')
+      } catch (e: any) {
+        if (cancelled) return
+        setError(e?.message || `Failed to look up ${gift.recipientHandle} on SuiNS`)
+        setStep('error')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [step, gift, account?.address, suiClient])
 
   async function startVerify() {
     if (!gift || !account?.address) return
@@ -129,13 +173,17 @@ export default function ClaimPage() {
 
     setStep('claiming'); setError(null)
     try {
-      const checkRes = await fetch('/api/culture/auth/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ verifyToken, giftId: gift.giftId, walletAddress: account.address }),
-      })
-      const checkData = await checkRes.json()
-      if (!checkData.valid) throw new Error(checkData.error || 'Verification expired — re-verify with X')
+      // X-OAuth tokens need server-side revalidation; the SuiNS sentinel
+      // has already been verified against the live on-chain name record.
+      if (verifyToken !== SUINS_VERIFIED_TOKEN) {
+        const checkRes = await fetch('/api/culture/auth/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verifyToken, giftId: gift.giftId, walletAddress: account.address }),
+        })
+        const checkData = await checkRes.json()
+        if (!checkData.valid) throw new Error(checkData.error || 'Verification expired — re-verify with X')
+      }
 
       const tx = new Transaction()
       tx.setGasBudget(50_000_000)
@@ -166,6 +214,11 @@ export default function ClaimPage() {
 
   const decimals = tokenMeta?.decimals ?? 9
   const label = tokenMeta?.symbol ?? gift?.tokenSymbol ?? 'TOKEN'
+  const recipientDisplay = gift ? (isSuinsGift ? gift.recipientHandle : `@${gift.recipientHandle}`) : ''
+  const verifiedDisplay = verifiedAs ? (isSuinsGift ? verifiedAs : `@${verifiedAs}`) : ''
+  const headerSubtitle = isSuinsGift
+    ? 'Connect the wallet that owns this .sui name to claim.'
+    : 'Verify with X to claim.'
 
   return (
     <main className="min-h-screen bg-[#07070e] pt-20 pb-16">
@@ -181,7 +234,7 @@ export default function ClaimPage() {
             </div>
             <div>
               <h1 className="text-white font-bold">Airdrop waiting for you</h1>
-              <p className="text-xs text-gray-500">Verify with X to claim.</p>
+              <p className="text-xs text-gray-500">{headerSubtitle}</p>
             </div>
           </div>
 
@@ -199,7 +252,7 @@ export default function ClaimPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-500 text-xs">For</span>
-                <span className="text-white text-sm">@{gift.recipientHandle}</span>
+                <span className="text-white text-sm">{recipientDisplay}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-500 text-xs">From</span>
@@ -241,6 +294,12 @@ export default function ClaimPage() {
             </div>
           )}
 
+          {step === 'suins-checking' && (
+            <div className="py-6 text-center text-gray-400 text-sm flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Checking {gift?.recipientHandle} ownership…
+            </div>
+          )}
+
           {step === 'verifying' && (
             <div className="py-6 text-center text-gray-400 text-sm flex items-center justify-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" /> Verifying with X…
@@ -250,7 +309,7 @@ export default function ClaimPage() {
           {step === 'ready' && (
             <div className="space-y-3">
               <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 flex items-center gap-1">
-                <Check className="w-3 h-3" /> Verified as @{verifiedAs}
+                <Check className="w-3 h-3" /> Verified as {verifiedDisplay}
               </div>
               <button
                 onClick={executeClaim}
