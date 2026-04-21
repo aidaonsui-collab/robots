@@ -25,10 +25,10 @@ export default function CultureTab() {
             backgroundClip: 'text',
           }}
         >
-          Culture — Send Airdrops by X Handle
+          Build Culture — Send Gifts
         </h1>
         <p className="text-sm text-gray-500 mt-2">
-          Lock SUI, AIDA, or USDC for any X user or .sui name. They verify with X (or their wallet for .sui) and claim from their own wallet. Nothing claimed in 48h refunds to you.
+          Send airdrop gifts to any .sui name or X handle. They verify with X (or their wallet for .sui) and claim from their own wallet. Nothing claimed in 48h refunds to you.
         </p>
       </div>
 
