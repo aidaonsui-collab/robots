@@ -7,12 +7,12 @@ import { Check, Clock, AlertCircle, ExternalLink } from 'lucide-react'
 import {
   fetchAllGifts,
   timeUntil,
-  tokenConfigFor,
   formatAmount,
   detectRecipientKind,
   normaliseXHandle,
   GiftEvent,
 } from '@/lib/culture'
+import { useGiftTokenMeta } from './useGiftTokenMeta'
 
 function formatDate(ts: number): string {
   if (!ts) return '—'
@@ -73,6 +73,8 @@ export default function PublicFeed() {
       .finally(() => setLoading(false))
   }, [suiClient])
 
+  const resolveMeta = useGiftTokenMeta(gifts)
+
   const visible = gifts.filter(g =>
     filter === 'pending' ? !g.claimed && !g.isExpired
     : filter === 'claimed' ? g.claimed
@@ -124,9 +126,7 @@ export default function PublicFeed() {
             ) : visible.length === 0 ? (
               <tr><td colSpan={5} className="py-8 text-center text-xs text-gray-500">No airdrops yet</td></tr>
             ) : visible.map(g => {
-              const cfg = tokenConfigFor(g.tokenType)
-              const decimals = cfg?.decimals ?? 9
-              const label = cfg?.label ?? g.tokenSymbol
+              const { decimals, label } = resolveMeta(g)
               return (
                 <tr key={g.giftId} className="hover:bg-white/[0.02] transition-colors">
                   <td className="px-5 py-3"><RecipientCell handle={g.recipientHandle} /></td>
@@ -159,9 +159,7 @@ export default function PublicFeed() {
         ) : visible.length === 0 ? (
           <div className="py-8 text-center text-xs text-gray-500">No airdrops yet</div>
         ) : visible.map(g => {
-          const cfg = tokenConfigFor(g.tokenType)
-          const decimals = cfg?.decimals ?? 9
-          const label = cfg?.label ?? g.tokenSymbol
+          const { decimals, label } = resolveMeta(g)
           return (
             <div key={g.giftId} className="px-4 py-3">
               <div className="flex items-center justify-between mb-1">
