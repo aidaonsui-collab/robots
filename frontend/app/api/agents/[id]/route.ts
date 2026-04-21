@@ -1,42 +1,136 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAgent } from '@/lib/agents-db'
+import { getAgent, updateAgent, deleteAgent, type Agent } from '@/lib/agents-db'
+import { verifySignedAuth } from '@/lib/auth-sig'
+
+const IMMUTABLE_FIELDS = new Set<keyof Agent>([
+  'id',
+  'creatorAddress',
+  'agentAddress',
+  'tokenType',
+  'poolId',
+  'packageId',
+  'status',
+  'stripeCardId',
+  'stripeCardholderId',
+  'openclawSessionId',
+  'createdAt',
+  'updatedAt',
+])
+
+const ALLOWED_PATCH_FIELDS = [
+  'name',
+  'symbol',
+  'description',
+  'avatarUrl',
+  'twitter',
+  'telegram',
+  'website',
+  'personality',
+  'skills',
+  'llmModel',
+  'revenueAida',
+  'revenueCreator',
+  'revenuePlatform',
+  'twitterConfig',
+  'telegramConfig',
+  'services',
+  'tradingEnabled',
+  'tradingConfig',
+  'githubToken',
+  'githubUsername',
+  'apiKeys',
+] as const
+
+function projectAgentForRead(agent: Agent) {
+  return {
+    id: agent.id,
+    creatorAddress: agent.creatorAddress,
+    tokenType: agent.tokenType,
+    poolId: agent.poolId,
+    packageId: agent.packageId,
+    name: agent.name,
+    symbol: agent.symbol,
+    description: agent.description,
+    avatarUrl: agent.avatarUrl,
+    twitter: agent.twitter,
+    telegram: agent.telegram,
+    website: agent.website,
+    personality: agent.personality,
+    skills: agent.skills,
+    llmModel: agent.llmModel,
+    revenueAida: agent.revenueAida,
+    revenueCreator: agent.revenueCreator,
+    revenuePlatform: agent.revenuePlatform,
+    agentAddress: agent.agentAddress,
+    status: agent.status,
+    createdAt: agent.createdAt,
+    updatedAt: agent.updatedAt,
+    twitterConnected: Boolean(agent.twitterConfig?.apiKey),
+    twitterUsername: agent.twitterConfig?.username,
+    telegramConnected: Boolean(agent.telegramConfig?.botToken),
+    telegramUsername: agent.telegramConfig?.botUsername,
+    githubConnected: Boolean(agent.githubToken),
+    githubUsername: agent.githubUsername,
+    tradingEnabled: agent.tradingEnabled,
+    services: agent.services,
+  }
+}
 
 export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params
     const agent = await getAgent(id)
-
     if (!agent) {
-      return NextResponse.json(
-        { error: 'Agent not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
     }
-
-    return NextResponse.json(agent)
+    return NextResponse.json(projectAgentForRead(agent))
   } catch (error: any) {
-    console.error('Agent fetch error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to fetch agent' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params
-    const updates = await request.json()
-    const { updateAgent } = await import('@/lib/agents-db')
-    const updated = await updateAgent(id, updates)
+    const body = await request.json()
+    const { _auth, ...rawUpdates } = body || {}
+
+    const agent = await getAgent(id)
+    if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+
+    const auth = await verifySignedAuth({
+      resourceId: id,
+      action: 'agent.patch',
+      expectedAddress: agent.creatorAddress,
+      auth: _auth,
+    })
+    if (!auth.ok) {
+      return NextResponse.json(
+        { error: 'Unauthorized', reason: auth.reason },
+        { status: 401 },
+      )
+    }
+
+    const safe: Partial<Agent> = {}
+    for (const key of ALLOWED_PATCH_FIELDS) {
+      if (key in rawUpdates && !IMMUTABLE_FIELDS.has(key as keyof Agent)) {
+        ;(safe as any)[key] = (rawUpdates as any)[key]
+      }
+    }
+
+    const updated = await updateAgent(id, safe)
     if (!updated) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
-    return NextResponse.json(updated)
+
+    return NextResponse.json(projectAgentForRead(updated))
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
@@ -44,11 +138,35 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params
-    const { deleteAgent } = await import('@/lib/agents-db')
+    let body: any = null
+    try { body = await request.json() } catch { /* no body */ }
+    const auth = body?._auth ?? {
+      address: request.nextUrl.searchParams.get('address') || '',
+      nonce: request.nextUrl.searchParams.get('nonce') || '',
+      ts: Number(request.nextUrl.searchParams.get('ts') || '0'),
+      signature: request.nextUrl.searchParams.get('signature') || '',
+    }
+
+    const agent = await getAgent(id)
+    if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+
+    const ok = await verifySignedAuth({
+      resourceId: id,
+      action: 'agent.delete',
+      expectedAddress: agent.creatorAddress,
+      auth,
+    })
+    if (!ok.ok) {
+      return NextResponse.json(
+        { error: 'Unauthorized', reason: ok.reason },
+        { status: 401 },
+      )
+    }
+
     const deleted = await deleteAgent(id)
     if (!deleted) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
     return NextResponse.json({ success: true })
