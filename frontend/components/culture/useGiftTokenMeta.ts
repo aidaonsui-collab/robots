@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
-import { CULTURE_TOKENS, GiftEvent, normalizeCoinType } from '@/lib/culture'
+import { CULTURE_TOKENS, GiftEvent, normalizeCoinType, tickerFrom } from '@/lib/culture'
 
 export interface TokenMeta {
   decimals: number
@@ -37,15 +37,15 @@ export function useGiftTokenMeta(gifts: GiftEvent[]) {
       let changed = false
       results.forEach((r, i) => {
         const typeStr = unknown[i]
-        const lastSeg = typeStr.split('::').pop() || 'TOKEN'
+        const ticker = tickerFrom(typeStr)
         if (r.status === 'fulfilled' && r.value) {
           cache.set(typeStr, {
             decimals: r.value.decimals,
-            symbol: r.value.symbol || lastSeg,
+            symbol: tickerFrom(r.value.symbol || ticker),
           })
           changed = true
         } else {
-          cache.set(typeStr, { decimals: 9, symbol: lastSeg })
+          cache.set(typeStr, { decimals: 9, symbol: ticker })
           changed = true
         }
       })
@@ -59,7 +59,7 @@ export function useGiftTokenMeta(gifts: GiftEvent[]) {
     const key = normalizeCoinType(gift.tokenType)
     const hit = cache.get(key)
     if (hit) return { decimals: hit.decimals, label: hit.symbol }
-    return { decimals: 9, label: gift.tokenSymbol || 'TOKEN' }
+    return { decimals: 9, label: tickerFrom(gift.tokenSymbol || gift.tokenType) }
   }
 
   return resolve

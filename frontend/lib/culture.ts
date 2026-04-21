@@ -88,17 +88,17 @@ export async function resolveCoinMeta(client: SuiClient, typeStr: string): Promi
   if (hit) return hit
   const existing = coinMetaInflight.get(norm)
   if (existing) return existing
-  const lastSeg = norm.split('::').pop() || 'TOKEN'
+  const ticker = tickerFrom(norm)
   const p = (async () => {
     try {
       const meta = await client.getCoinMetadata({ coinType: norm })
       const resolved: TokenMeta = meta
-        ? { decimals: meta.decimals, symbol: meta.symbol || lastSeg }
-        : { decimals: 9, symbol: lastSeg }
+        ? { decimals: meta.decimals, symbol: tickerFrom(meta.symbol || ticker) }
+        : { decimals: 9, symbol: ticker }
       coinMetaCache.set(norm, resolved)
       return resolved
     } catch {
-      const fb: TokenMeta = { decimals: 9, symbol: lastSeg }
+      const fb: TokenMeta = { decimals: 9, symbol: ticker }
       coinMetaCache.set(norm, fb)
       return fb
     } finally {
@@ -153,6 +153,17 @@ export function shortenAddr(addr: string): string {
   return addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : ''
 }
 
+// Reduce a raw token identifier (full coin type, partial type, or stored
+// symbol string) to a clean ticker suitable for UI display. Strips any
+// `0x…::module::` prefix, drops non-alphanumeric garbage (e.g. a stray
+// trailing `>` from a regex miscapture), and caps length.
+export function tickerFrom(raw: string): string {
+  if (!raw) return 'TOKEN'
+  const tail = raw.includes('::') ? (raw.split('::').pop() || raw) : raw
+  const cleaned = tail.replace(/[^A-Za-z0-9_]/g, '')
+  return cleaned.slice(0, 12) || 'TOKEN'
+}
+
 export function timeUntil(ts: number): string {
   const diff = ts - Math.floor(Date.now() / 1000)
   if (diff <= 0) return 'Expired'
@@ -183,7 +194,12 @@ export async function fetchGiftCoinType(client: SuiClient, giftId: string): Prom
       const res = await client.getDynamicFields({ parentId: giftId })
       for (const f of res.data || []) {
         const ot: string = (f as any).objectType || ''
-        const m = ot.match(/::balance::Balance<(.+)>$/)
+        // `objectType` is the wrapping Field<K, Balance<T>> type, so the
+        // string ends in `>>`. A greedy match would keep one `>` inside
+        // the capture — use non-greedy and stop at the first `>`, which
+        // is always the closing bracket of Balance<…> for concrete coin
+        // types (coin types never contain `>`).
+        const m = ot.match(/::balance::Balance<(.+?)>/)
         if (m) {
           const coinType = normalizeCoinType(m[1])
           if (coinType) {
@@ -228,14 +244,13 @@ export async function fetchGiftById(client: SuiClient, giftId: string): Promise<
     if (!fields) return null
     const now = Math.floor(Date.now() / 1000)
     const expiresAt = Number(fields.expires_at ?? 0)
-    const tokenParts = tokenType.split('::')
     return {
       giftId,
       depositor:       fields.depositor,
       recipientHandle: fields.recipient_handle,
       amount:          String(fields.amount ?? '0'),
       tokenType,
-      tokenSymbol:     tokenParts[tokenParts.length - 1] || 'TOKEN',
+      tokenSymbol:     tickerFrom(tokenType),
       message:         fields.message ?? '',
       expiresAt,
       timestampMs:     Number(fields.created_at ?? 0) * 1000,
@@ -268,14 +283,17 @@ export async function fetchAllGifts(client: SuiClient): Promise<GiftEvent[]> {
     const fields = (objects[i]?.data?.content as any)?.fields
     const expiresAt = Number(p.expires_at ?? 0)
     const tokenType = coinTypes[i] || ''
-    const tokenParts = tokenType.split('::')
+    // Prefer the dynamic-field coin type (always the full `0x…::mod::T`);
+    // fall back to the event's `token_type` string, which in older gifts
+    // may be the entire coin type rather than just the ticker. `tickerFrom`
+    // collapses either shape down to a clean symbol.
     return {
       giftId:          p.gift_id,
       depositor:       p.depositor,
       recipientHandle: p.recipient,
       amount:          String(p.amount ?? '0'),
       tokenType,
-      tokenSymbol:     tokenParts[tokenParts.length - 1] || String(p.token_type ?? 'TOKEN'),
+      tokenSymbol:     tokenType ? tickerFrom(tokenType) : tickerFrom(String(p.token_type ?? '')),
       message:         p.message ?? '',
       expiresAt,
       timestampMs:     Number(e.timestampMs ?? 0),

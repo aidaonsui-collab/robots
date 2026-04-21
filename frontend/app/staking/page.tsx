@@ -3,6 +3,8 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useCurrentWallet, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Coins, Gift, Loader2, Wallet, AlertTriangle, ArrowRight, TrendingUp, ExternalLink, Lock } from 'lucide-react'
 import { Transaction } from '@mysten/sui/transactions'
@@ -43,13 +45,31 @@ async function rpc(method: string, params: any[]) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
+type PageTab = 'staking' | 'suilock' | 'culture'
+
 export default function StakingPage() {
+  // `useSearchParams` requires a Suspense boundary — wrap the stateful inner
+  // component so the first render has a client-side URL snapshot available.
+  return (
+    <Suspense fallback={<main className="min-h-screen pt-20" />}>
+      <StakingPageInner />
+    </Suspense>
+  )
+}
+
+function StakingPageInner() {
   const { isConnected: connected, currentWallet } = useCurrentWallet()
   const address = currentWallet?.accounts?.[0]?.address
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction()
 
-  // Page tab
-  const [pageTab, setPageTab] = useState<'staking' | 'suilock' | 'culture'>('staking')
+  // Tab state is driven by the `?tab=` query param so each tab has a
+  // shareable URL (`/staking`, `/staking?tab=suilock`, `/staking?tab=culture`).
+  const searchParams = useSearchParams()
+  const tabParam = searchParams?.get('tab')
+  const pageTab: PageTab =
+    tabParam === 'suilock' ? 'suilock'
+    : tabParam === 'culture' ? 'culture'
+    : 'staking'
 
   // UI state
   const [loading, setLoading]           = useState(false)
@@ -617,10 +637,11 @@ export default function StakingPage() {
     <main className="min-h-screen pt-20 pb-12">
       <div className="max-w-4xl mx-auto px-4">
 
-        {/* Page Tabs: Staking | SuiLock */}
+        {/* Page Tabs: Staking | SuiLock | Culture — each has a unique URL */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          <button
-            onClick={() => setPageTab('staking')}
+          <Link
+            href="/staking"
+            scroll={false}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all ${
               pageTab === 'staking'
                 ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30'
@@ -629,9 +650,10 @@ export default function StakingPage() {
           >
             <Coins className="w-4 h-4" />
             AIDA Staking
-          </button>
-          <button
-            onClick={() => setPageTab('suilock')}
+          </Link>
+          <Link
+            href="/staking?tab=suilock"
+            scroll={false}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all ${
               pageTab === 'suilock'
                 ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30'
@@ -640,9 +662,10 @@ export default function StakingPage() {
           >
             <Lock className="w-4 h-4" />
             SuiLock
-          </button>
-          <button
-            onClick={() => setPageTab('culture')}
+          </Link>
+          <Link
+            href="/staking?tab=culture"
+            scroll={false}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all ${
               pageTab === 'culture'
                 ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30'
@@ -651,7 +674,7 @@ export default function StakingPage() {
           >
             <Gift className="w-4 h-4" />
             Culture
-          </button>
+          </Link>
         </div>
 
         {/* Culture Tab — send airdrops by X handle */}
