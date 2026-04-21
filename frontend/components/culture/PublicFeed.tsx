@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
 import Link from 'next/link'
 import { Check, Clock, AlertCircle, ExternalLink } from 'lucide-react'
@@ -12,6 +12,7 @@ import {
   normaliseXHandle,
   GiftEvent,
 } from '@/lib/culture'
+import { useCultureRefresh } from '@/lib/cultureBus'
 import { useGiftTokenMeta } from './useGiftTokenMeta'
 
 function formatDate(ts: number): string {
@@ -54,24 +55,22 @@ function StatusCell({ gift }: { gift: GiftEvent }) {
   )
 }
 
-/**
- * Public ledger of all airdrops created via the Culture contract. Recipient
- * handle, amount, date, and claim status. Read-only for everyone — the
- * recipient's own view lives in ClaimSearch above this component.
- */
 export default function PublicFeed() {
   const suiClient = useSuiClient()
   const [gifts, setGifts] = useState<GiftEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'pending' | 'claimed'>('all')
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     setLoading(true)
     fetchAllGifts(suiClient)
       .then(setGifts)
       .catch(() => setGifts([]))
       .finally(() => setLoading(false))
   }, [suiClient])
+
+  useEffect(() => { reload() }, [reload])
+  useCultureRefresh(reload)
 
   const resolveMeta = useGiftTokenMeta(gifts)
 
@@ -108,7 +107,6 @@ export default function PublicFeed() {
         </div>
       </div>
 
-      {/* Desktop table */}
       <div className="hidden sm:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -152,7 +150,6 @@ export default function PublicFeed() {
         </table>
       </div>
 
-      {/* Mobile cards */}
       <div className="sm:hidden divide-y divide-white/[0.03]">
         {loading ? (
           <div className="py-8 text-center text-xs text-gray-500">Loading…</div>
