@@ -1,5 +1,11 @@
 /**
  * Culture (Airdrops) — shared constants + on-chain helpers.
+ *
+ * Contract layout note: `Gift` is a non-generic shared object. The coin
+ * lives on a **dynamic field** named `"balance"` attached to the gift's
+ * UID (`df::add(&mut gift.id, b"balance", Balance<A>)`), so the coin
+ * type is only visible via `getDynamicFields`, not the gift object's
+ * own `content.fields`.
  */
 
 import { SuiClient } from '@mysten/sui/client'
@@ -156,6 +162,46 @@ export function timeUntil(ts: number): string {
   return `${h}h ${m}m`
 }
 
+// ── Coin-type extraction from a Gift's dynamic fields ────────────────────
+
+/**
+ * The Gift contract stores its Coin as a dynamic field of type
+ * `Balance<A>`. Pull the first DF whose `objectType` matches `Balance<T>`
+ * and return T. Cached per-gift so repeated reads don't re-query.
+ */
+const giftCoinTypeCache = new Map<string, string>()
+const giftCoinTypeInflight = new Map<string, Promise<string>>()
+
+export async function fetchGiftCoinType(client: SuiClient, giftId: string): Promise<string> {
+  const hit = giftCoinTypeCache.get(giftId)
+  if (hit !== undefined) return hit
+  const existing = giftCoinTypeInflight.get(giftId)
+  if (existing) return existing
+
+  const p = (async () => {
+    try {
+      const res = await client.getDynamicFields({ parentId: giftId })
+      for (const f of res.data || []) {
+        const ot: string = (f as any).objectType || ''
+        const m = ot.match(/::balance::Balance<(.+)>$/)
+        if (m) {
+          const coinType = normalizeCoinType(m[1])
+          if (coinType) {
+            giftCoinTypeCache.set(giftId, coinType)
+            return coinType
+          }
+        }
+      }
+    } catch {
+      // fall through — caller will fall back to whatever it has
+    }
+    giftCoinTypeCache.set(giftId, '')
+    return ''
+  })()
+  giftCoinTypeInflight.set(giftId, p)
+  try { return await p } finally { giftCoinTypeInflight.delete(giftId) }
+}
+
 // ── Gift types ───────────────────────────────────────────────────────────
 
 export interface GiftEvent {
@@ -172,68 +218,16 @@ export interface GiftEvent {
   isExpired: boolean
 }
 
-/**
- * Best-effort extraction of the coin type T from a Gift object.
- *
- * Cases we handle, in priority order:
- *  1. Generic outer struct — `Gift<T>` in `content.type` — clean `<…>`.
- *  2. Non-generic Gift whose coin is stored in a nested `balance:
- *     Balance<T>` field. Walk `content.fields` looking for any nested
- *     object whose own `.type` carries a `<T>`.
- */
-function coinTypeFromObject(obj: any): string {
-  const outerType: string =
-    obj?.data?.content?.type ||
-    obj?.data?.type ||
-    ''
-  const outerInner = outerType.match(/<(.+)>$/)?.[1]
-  if (outerInner) {
-    const norm = normalizeCoinType(outerInner)
-    if (norm) return norm
-  }
-
-  const fields = obj?.data?.content?.fields
-  if (fields && typeof fields === 'object') {
-    // Depth-limited walk — balance-style fields live one level deep on
-    // every gift struct I've seen, but tolerate a little nesting just
-    // in case the contract wraps things.
-    const seen = new Set<any>()
-    const walk = (val: any, depth: number): string => {
-      if (!val || typeof val !== 'object' || depth > 3 || seen.has(val)) return ''
-      seen.add(val)
-      if (typeof val.type === 'string') {
-        const m = val.type.match(/<(.+)>$/)?.[1]
-        if (m) {
-          const norm = normalizeCoinType(m)
-          if (norm) return norm
-        }
-      }
-      if (val.fields && typeof val.fields === 'object') {
-        const found = walk(val.fields, depth + 1)
-        if (found) return found
-      }
-      for (const k of Object.keys(val)) {
-        if (k === 'type' || k === 'fields') continue
-        const found = walk(val[k], depth + 1)
-        if (found) return found
-      }
-      return ''
-    }
-    const found = walk(fields, 0)
-    if (found) return found
-  }
-
-  return ''
-}
-
 export async function fetchGiftById(client: SuiClient, giftId: string): Promise<GiftEvent | null> {
   try {
-    const obj = await client.getObject({ id: giftId, options: { showContent: true, showType: true } })
+    const [obj, tokenType] = await Promise.all([
+      client.getObject({ id: giftId, options: { showContent: true, showType: true } }),
+      fetchGiftCoinType(client, giftId),
+    ])
     const fields = (obj.data?.content as any)?.fields
     if (!fields) return null
     const now = Math.floor(Date.now() / 1000)
     const expiresAt = Number(fields.expires_at ?? 0)
-    const tokenType = coinTypeFromObject(obj)
     const tokenParts = tokenType.split('::')
     return {
       giftId,
@@ -261,26 +255,19 @@ export async function fetchAllGifts(client: SuiClient): Promise<GiftEvent[]> {
   })
   const ids = events.data.map(e => (e.parsedJson as any)?.gift_id).filter(Boolean) as string[]
   if (ids.length === 0) return []
-  const objects = await client.multiGetObjects({ ids, options: { showContent: true, showType: true } })
+
+  // Hydrate object state (for `claimed`) and dynamic-field coin types in parallel.
+  const [objects, coinTypes] = await Promise.all([
+    client.multiGetObjects({ ids, options: { showContent: true, showType: true } }),
+    Promise.all(ids.map(id => fetchGiftCoinType(client, id))),
+  ])
   const now = Math.floor(Date.now() / 1000)
 
   return events.data.map((e, i) => {
     const p: any = e.parsedJson
-    const obj = objects[i]
-    const fields = (obj?.data?.content as any)?.fields
+    const fields = (objects[i]?.data?.content as any)?.fields
     const expiresAt = Number(p.expires_at ?? 0)
-
-    // Gift object drives tokenType extraction — covers both generic
-    // `Gift<T>` and non-generic `Gift { balance: Balance<T> }` layouts.
-    // Only fall through to the event's short symbol if the object isn't
-    // hydrated at all, and even then require `::` segments so a bare
-    // "DEEP" doesn't poison the display.
-    let tokenType = coinTypeFromObject(obj)
-    if (!tokenType) {
-      const eventFallback = normalizeCoinType(p.token_type)
-      if (eventFallback.includes('::')) tokenType = eventFallback
-    }
-
+    const tokenType = coinTypes[i] || ''
     const tokenParts = tokenType.split('::')
     return {
       giftId:          p.gift_id,
