@@ -16,10 +16,12 @@ import {
   fetchGiftById,
   timeUntil,
   shortenAddr,
-  tokenConfigFor,
   formatAmount,
+  resolveCoinMeta,
+  TokenMeta,
   GiftEvent,
 } from '@/lib/culture'
+import { emitCultureRefresh } from '@/lib/cultureBus'
 
 const ConnectButton = dynamicImport(
   () => import('@mysten/dapp-kit').then(m => m.ConnectButton),
@@ -36,13 +38,13 @@ export default function ClaimPage() {
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction()
 
   const [gift, setGift] = useState<GiftEvent | null>(null)
+  const [tokenMeta, setTokenMeta] = useState<TokenMeta | null>(null)
   const [step, setStep] = useState<Step>('loading')
   const [error, setError] = useState<string | null>(null)
   const [verifyToken, setVerifyToken] = useState<string | null>(null)
   const [verifiedAs, setVerifiedAs] = useState<string | null>(null)
   const [claimDigest, setClaimDigest] = useState<string | null>(null)
 
-  // Load gift
   useEffect(() => {
     if (!giftId) return
     fetchGiftById(suiClient, giftId).then(g => {
@@ -54,13 +56,22 @@ export default function ClaimPage() {
     }).catch(e => { setError(e?.message || 'Failed to load gift'); setStep('error') })
   }, [giftId, suiClient, account?.address])
 
-  // After wallet connects, advance past needs-connect
+  // Resolve the token's real decimals + symbol from on-chain CoinMetadata.
+  // Falls back safely; claim works either way because the tx uses the raw
+  // tokenType as a generic argument, not the display metadata.
+  useEffect(() => {
+    if (!gift?.tokenType) return
+    let cancelled = false
+    resolveCoinMeta(suiClient, gift.tokenType).then(m => {
+      if (!cancelled) setTokenMeta(m)
+    })
+    return () => { cancelled = true }
+  }, [gift?.tokenType, suiClient])
+
   useEffect(() => {
     if (step === 'needs-connect' && account?.address) setStep('needs-verify')
   }, [account?.address, step])
 
-  // If the user just came back from /airdrops/callback, pick up the
-  // verifyToken + username that the callback page stashed in sessionStorage.
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!giftId) return
@@ -68,7 +79,6 @@ export default function ClaimPage() {
       const raw = sessionStorage.getItem(`culture:verify:${giftId}`)
       if (!raw) return
       const stashed = JSON.parse(raw) as { verifyToken: string; username: string; ts: number }
-      // Verify records TTL on the server is 15 min — drop anything older locally
       if (!stashed.verifyToken || Date.now() - (stashed.ts || 0) > 15 * 60 * 1000) {
         sessionStorage.removeItem(`culture:verify:${giftId}`)
         return
@@ -107,7 +117,6 @@ export default function ClaimPage() {
 
     setStep('claiming'); setError(null)
     try {
-      // Revalidate the verify token right before signing (token is short-lived)
       const checkRes = await fetch('/api/culture/auth/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,16 +145,16 @@ export default function ClaimPage() {
       }
       setClaimDigest(result.digest)
       setStep('done')
+      // Any open /staking tab should refresh its feed immediately.
+      emitCultureRefresh()
     } catch (e: any) {
       setError(e?.message || 'Claim failed')
       setStep('error')
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────
-  const cfg = gift ? tokenConfigFor(gift.tokenType) : undefined
-  const decimals = cfg?.decimals ?? 9
-  const label = cfg?.label ?? gift?.tokenSymbol
+  const decimals = tokenMeta?.decimals ?? 9
+  const label = tokenMeta?.symbol ?? gift?.tokenSymbol ?? 'TOKEN'
 
   return (
     <main className="min-h-screen bg-[#07070e] pt-20 pb-16">
