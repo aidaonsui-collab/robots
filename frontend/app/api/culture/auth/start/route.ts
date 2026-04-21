@@ -2,14 +2,6 @@
  * POST /api/culture/auth/start
  *
  * First leg of the X OAuth2 PKCE flow for the Culture (airdrops) feature.
- * Body: { giftId, walletAddress, recipientHandle }
- * Returns: { authUrl, state }
- *
- * Caller redirects the browser to `authUrl`. X then hits our /callback page
- * with ?code&state, which POSTs to /auth/verify to exchange and fetch the
- * X username. Verified username must match the gift's intended recipient.
- *
- * State + PKCE code_verifier are stashed in Upstash KV with a 10-minute TTL.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -21,9 +13,15 @@ export const dynamic = 'force-dynamic'
 
 const STATE_TTL_SECONDS = 10 * 60
 
-const CLIENT_ID     = process.env.X_OAUTH_CLIENT_ID || ''
-const REDIRECT_URI  = process.env.X_OAUTH_REDIRECT_URI
-  || (process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/airdrops/callback` : '')
+function deriveRedirectUri(): string {
+  const explicit = (process.env.X_OAUTH_REDIRECT_URI || '').trim()
+  if (explicit) return explicit
+  const base = (process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/+$/, '')
+  return base ? `${base}/airdrops/callback` : ''
+}
+
+const CLIENT_ID = process.env.X_OAUTH_CLIENT_ID || ''
+const REDIRECT_URI = deriveRedirectUri()
 
 function generateCodeVerifier(): string {
   return crypto.randomBytes(32).toString('base64url')
@@ -69,9 +67,14 @@ export async function POST(req: NextRequest) {
       code_challenge_method: 'S256',
     })
 
+    // Log the redirect URI actually being sent to X so a Vercel-side misconfig
+    // (wrong NEXT_PUBLIC_APP_URL or trailing slash) is visible in deploy logs.
+    console.log('[culture/auth/start] redirect_uri =', REDIRECT_URI)
+
     return NextResponse.json({
       authUrl: `https://twitter.com/i/oauth2/authorize?${params.toString()}`,
       state,
+      redirectUri: REDIRECT_URI,
     })
   } catch (e: any) {
     console.error('[culture/auth/start]', e)
