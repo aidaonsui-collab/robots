@@ -55,11 +55,18 @@ async function unmarkProcessed(eventId: string): Promise<void> {
 }
 
 export async function GET(req: Request) {
-  const authHeader = req.headers.get('authorization')
+  // Fail-closed auth. Previously `if (cronSecret && …)` short-circuited the
+  // check when the env var was unset, leaving an admin-signed endpoint open.
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    console.error('[cron/graduate] CRON_SECRET is not configured')
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 503 })
+  }
+  const authHeader = req.headers.get('authorization')
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
   if (!process.env.ADMIN_WALLET_SECRET) {
     return NextResponse.json({ error: 'ADMIN_WALLET_SECRET not configured' }, { status: 503 })
   }
@@ -67,10 +74,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'MOMENTUM_PACKAGE_ID not configured' }, { status: 503 })
   }
 
-  // Optional filters:
-  //   ?force=true            — re-process ALL events regardless of Redis state
-  //   ?token=<tokenType>     — only process events whose token_address matches
-  //                           AND clear them from Redis before processing
   const url = new URL(req.url)
   const force = url.searchParams.get('force') === 'true'
   const tokenFilter = url.searchParams.get('token')
@@ -98,8 +101,6 @@ export async function GET(req: Request) {
         ? parsed.token_address
         : `0x${parsed.token_address}`
 
-      // Token filter: only process specific tokenType if requested, and
-      // unmark it from Redis first so the rest of the processing path proceeds.
       if (tokenFilter) {
         if (tokenType !== tokenFilter && tokenType !== normalizePkg(tokenFilter)) continue
         await unmarkProcessed(eventId)
@@ -122,8 +123,6 @@ export async function GET(req: Request) {
       }
 
       console.log(`[graduate] Graduating: ${graduation.tokenType}`)
-      console.log(`  AIDA: ${Number(graduation.aidaAmount) / 1e9}`)
-      console.log(`  Tokens: ${Number(graduation.tokenAmount) / 10 ** TOKEN_DECIMALS}`)
 
       const poolResult = await createMomentumPool(graduation)
 
@@ -135,9 +134,6 @@ export async function GET(req: Request) {
         pool: poolResult,
       })
 
-      // Only mark processed on actual success — this lets failed graduations
-      // retry on the next cron run (or via ?force=true) instead of getting
-      // stuck in the processed set.
       if (poolResult.success) {
         await markAndTrack(eventId)
         console.log(`[graduate] Graduated! Pool: ${poolResult.poolId}`)
@@ -157,8 +153,6 @@ export async function GET(req: Request) {
   })
 }
 
-// Normalize a package prefix to 64 hex chars after 0x. Makes the ?token filter
-// robust against truncated/padded address forms.
 function normalizePkg(tokenType: string): string {
   const parts = tokenType.split('::')
   if (parts.length < 3) return tokenType
