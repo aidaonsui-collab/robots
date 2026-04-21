@@ -1,9 +1,5 @@
 /**
  * Culture (Airdrops) — shared constants + on-chain helpers.
- *
- * The Culture Fund contract lets a sender lock tokens on-chain keyed to an
- * X handle; the recipient proves ownership via X OAuth and claims the gift
- * from their connected wallet. 48-hour expiry, 2% platform fee.
  */
 
 import { SuiClient } from '@mysten/sui/client'
@@ -36,23 +32,43 @@ export const CULTURE_TOKENS: CultureTokenOption[] = [
 ]
 
 // ── Coin-type normalisation ──────────────────────────────────────────────
-// Sui emits TypeName values in events without the `0x` prefix on the
-// address, e.g. `deeb7a4a…::deep::DEEP`. Pass those straight into
-// `getCoinMetadata` and the RPC rejects them. Normalise at every read
-// boundary so downstream code can trust the form.
 
-export function normalizeCoinType(raw: string): string {
-  if (!raw) return raw
-  const parts = raw.split('::')
-  if (parts.length < 3) return raw
+/**
+ * Coerce a coin-type carrier (string, `{ name: string }`, Uint8Array from
+ * a BCS TypeName, anything reasonable) into a canonical string with an
+ * `0x` address prefix suitable for `getCoinMetadata`.
+ */
+export function normalizeCoinType(raw: unknown): string {
+  if (raw == null) return ''
+  let s: string
+  if (typeof raw === 'string') {
+    s = raw
+  } else if (typeof raw === 'object' && raw !== null) {
+    const asAny = raw as any
+    if (typeof asAny.name === 'string') s = asAny.name
+    else if (Array.isArray(asAny) || ArrayBuffer.isView(asAny)) {
+      try { s = new TextDecoder().decode(new Uint8Array(asAny)) } catch { s = String(raw) }
+    } else {
+      s = String(raw)
+    }
+  } else {
+    s = String(raw)
+  }
+
+  s = s.trim()
+  if (!s) return ''
+  if (s.startsWith('<') && s.endsWith('>')) s = s.slice(1, -1)
+  const genericInner = s.match(/<(.+)>$/)?.[1]
+  if (genericInner) s = genericInner
+
+  const parts = s.split('::')
+  if (parts.length < 3) return s
   const [addr, ...rest] = parts
   const normalizedAddr = addr.startsWith('0x') ? addr : `0x${addr}`
   return [normalizedAddr, ...rest].join('::')
 }
 
 // ── Shared CoinMetadata cache ────────────────────────────────────────────
-// Process-wide cache so SendForm, display components and the claim page
-// all share one source of truth for a coin's decimals + symbol.
 
 export interface TokenMeta {
   decimals: number
@@ -65,11 +81,6 @@ for (const t of CULTURE_TOKENS) {
 }
 const coinMetaInflight = new Map<string, Promise<TokenMeta>>()
 
-/**
- * Resolve a coin type's decimals + symbol from on-chain CoinMetadata,
- * cached process-wide. Falls back to 9 decimals + the last type segment
- * as the symbol when the chain has no CoinMetadata for this type.
- */
 export async function resolveCoinMeta(client: SuiClient, typeStr: string): Promise<TokenMeta> {
   const norm = normalizeCoinType(typeStr)
   const hit = coinMetaCache.get(norm)
@@ -103,7 +114,6 @@ export function getCachedCoinMeta(typeStr: string): TokenMeta | undefined {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-/** Strip @, full URL wrappers, query strings, and lowercase. */
 export function normaliseXHandle(raw: string): string {
   return raw.toLowerCase()
     .replace(/.*(?:x\.com|twitter\.com)\//, '')
@@ -112,7 +122,6 @@ export function normaliseXHandle(raw: string): string {
     .trim()
 }
 
-/** Recipient-handle kind, inferred from the stored string. */
 export type RecipientKind = 'x' | 'sui' | 'unknown'
 
 export function detectRecipientKind(raw: string): RecipientKind {
@@ -168,6 +177,21 @@ export interface GiftEvent {
   isExpired: boolean
 }
 
+/**
+ * Extract the generic parameter `<T>` from an Object's type string. The
+ * object's type always looks like `0x<pkg>::culture_fund::Gift<0x…::mod::T>`,
+ * which is the cleanest and most reliable source of the coin type — event
+ * payloads are less predictable across SDK versions.
+ */
+function coinTypeFromObject(obj: any): string {
+  const typeStr: string =
+    obj?.data?.content?.type ||
+    obj?.data?.type ||
+    ''
+  const inner = typeStr.match(/<(.+)>$/)?.[1] || ''
+  return normalizeCoinType(inner)
+}
+
 export async function fetchGiftById(client: SuiClient, giftId: string): Promise<GiftEvent | null> {
   try {
     const obj = await client.getObject({ id: giftId, options: { showContent: true, showType: true } })
@@ -175,15 +199,7 @@ export async function fetchGiftById(client: SuiClient, giftId: string): Promise<
     if (!fields) return null
     const now = Math.floor(Date.now() / 1000)
     const expiresAt = Number(fields.expires_at ?? 0)
-    // Object responses expose the full type at both `data.type` and
-    // `data.content.type` — fall through so a future SDK tweak doesn't
-    // drop the generic parameter we need.
-    const typeStr: string =
-      (obj.data?.content as any)?.type ||
-      (obj.data as any)?.type ||
-      ''
-    const generic = typeStr.match(/<(.+)>$/)?.[1] || ''
-    const tokenType = normalizeCoinType(generic)
+    const tokenType = coinTypeFromObject(obj)
     const tokenParts = tokenType.split('::')
     return {
       giftId,
@@ -216,9 +232,16 @@ export async function fetchAllGifts(client: SuiClient): Promise<GiftEvent[]> {
 
   return events.data.map((e, i) => {
     const p: any = e.parsedJson
-    const fields = (objects[i]?.data?.content as any)?.fields
+    const obj = objects[i]
+    const fields = (obj?.data?.content as any)?.fields
     const expiresAt = Number(p.expires_at ?? 0)
-    const tokenType = normalizeCoinType(String(p.token_type ?? ''))
+
+    // Prefer the coin type extracted from the gift object's full type
+    // string (always includes the generic parameter cleanly). Fall back to
+    // the event payload only if the object is missing for some reason.
+    let tokenType = coinTypeFromObject(obj)
+    if (!tokenType) tokenType = normalizeCoinType(p.token_type)
+
     const tokenParts = tokenType.split('::')
     return {
       giftId:          p.gift_id,
