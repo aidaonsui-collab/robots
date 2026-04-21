@@ -20,7 +20,11 @@ export const metadata: Metadata = {
     type: 'website',
   },
   twitter: {
-    card: 'summary',
+    // Upgraded from `summary` to `summary_large_image` so X renders the
+    // banner-style preview using the auto-generated card in
+    // `app/twitter-image.tsx`. No need to list images explicitly — the
+    // file-convention export wires it up automatically.
+    card: 'summary_large_image',
     title: 'Odyssey 2.0 - AI Agent Launchpad',
     description: 'Journey into the world of Ai.',
   },
