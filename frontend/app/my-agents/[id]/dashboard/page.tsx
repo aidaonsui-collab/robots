@@ -853,14 +853,16 @@ export default function AgentDashboardPage() {
 
   const handleAddApiKey = async () => {
     if (!newApiKey.name || !newApiKey.baseUrl || !newApiKey.headerValue) return
-    const existing = agent.apiKeys || []
-    const apiKeys = [...existing, {
+    // Server applies the delta against its stored list. Sending the full
+    // array isn't possible here — the projected GET never returns existing
+    // `apiKeys[].headers`, so the client can't reconstruct it.
+    const apiKeysAdd = {
       name: newApiKey.name,
       baseUrl: newApiKey.baseUrl,
       headers: { [newApiKey.headerKey]: newApiKey.headerValue },
-    }]
+    }
     try {
-      const res = await signAndPatch({ apiKeys })
+      const res = await signAndPatch({ apiKeysAdd })
       if (res.ok) {
         const updated = await res.json()
         setAgent((prev: any) => ({ ...prev, ...updated }))
@@ -873,10 +875,8 @@ export default function AgentDashboardPage() {
   }
 
   const handleRemoveApiKey = async (index: number) => {
-    const apiKeys = [...(agent.apiKeys || [])]
-    apiKeys.splice(index, 1)
     try {
-      const res = await signAndPatch({ apiKeys })
+      const res = await signAndPatch({ apiKeysRemove: index })
       if (res.ok) {
         const updated = await res.json()
         setAgent((prev: any) => ({ ...prev, ...updated }))
@@ -2585,26 +2585,26 @@ export default function AgentDashboardPage() {
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Telegram */}
-              <div className={`p-4 rounded-xl border ${agent.telegramConfig?.enabled ? 'bg-white/5 border-emerald-500/30' : 'bg-white/5 border-white/10'}`}>
+              <div className={`p-4 rounded-xl border ${agent.telegramEnabled ? 'bg-white/5 border-emerald-500/30' : 'bg-white/5 border-white/10'}`}>
                 <div className="flex items-center gap-2 mb-1">
                   <MessageCircle className="w-5 h-5 text-blue-400" />
                   <span className="text-sm text-white font-medium">Telegram</span>
                 </div>
-                {agent.telegramConfig?.enabled && (
-                  <p className="text-[10px] text-emerald-400 mb-2">@{agent.telegramConfig.botUsername || 'connected'}</p>
+                {agent.telegramEnabled && (
+                  <p className="text-[10px] text-emerald-400 mb-2">@{agent.telegramUsername || 'connected'}</p>
                 )}
                 <div className="flex gap-2 mt-2">
                   <button
                     onClick={() => setShowTelegramSetup(true)}
                     className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${
-                      agent.telegramConfig?.enabled
+                      agent.telegramEnabled
                         ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
                         : 'bg-white/5 hover:bg-white/10 text-gray-400'
                     }`}
                   >
-                    {agent.telegramConfig?.enabled ? 'Connected' : 'Connect'}
+                    {agent.telegramEnabled ? 'Connected' : 'Connect'}
                   </button>
-                  {agent.telegramConfig?.enabled && (
+                  {agent.telegramEnabled && (
                     <button
                       onClick={async () => {
                         if (!confirm('Disconnect the Telegram bot?')) return

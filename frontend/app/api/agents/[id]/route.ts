@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAgent, updateAgent, deleteAgent, type Agent } from '@/lib/agents-db'
 import { verifySignedAuth } from '@/lib/auth-sig'
 
+// Creator-identity + bookkeeping fields the server owns. These CANNOT be
+// changed via PATCH regardless of allowlist membership.
 const IMMUTABLE_FIELDS = new Set<keyof Agent>([
   'id',
   'creatorAddress',
@@ -9,7 +11,6 @@ const IMMUTABLE_FIELDS = new Set<keyof Agent>([
   'tokenType',
   'poolId',
   'packageId',
-  'status',
   'stripeCardId',
   'stripeCardholderId',
   'openclawSessionId',
@@ -17,6 +18,8 @@ const IMMUTABLE_FIELDS = new Set<keyof Agent>([
   'updatedAt',
 ])
 
+// Fields a signed creator can update. `status` is here (not immutable) so
+// the dashboard's active/paused/stopped toggle continues to work.
 const ALLOWED_PATCH_FIELDS = [
   'name',
   'symbol',
@@ -28,6 +31,7 @@ const ALLOWED_PATCH_FIELDS = [
   'personality',
   'skills',
   'llmModel',
+  'status',
   'revenueAida',
   'revenueCreator',
   'revenuePlatform',
@@ -41,6 +45,9 @@ const ALLOWED_PATCH_FIELDS = [
   'apiKeys',
 ] as const
 
+// GET projection: hides on-chain/custodial secrets (twitterConfig/telegramConfig
+// API keys, githubToken, stripeCardId, apiKeys[].headers) while keeping
+// everything the dashboard UI needs to render current state.
 function projectAgentForRead(agent: Agent) {
   return {
     id: agent.id,
@@ -65,14 +72,26 @@ function projectAgentForRead(agent: Agent) {
     status: agent.status,
     createdAt: agent.createdAt,
     updatedAt: agent.updatedAt,
+    // Non-sensitive identifier for the dashboard's OpenClaw status badge.
+    openclawSessionId: agent.openclawSessionId,
     twitterConnected: Boolean(agent.twitterConfig?.apiKey),
     twitterUsername: agent.twitterConfig?.username,
     telegramConnected: Boolean(agent.telegramConfig?.botToken),
     telegramUsername: agent.telegramConfig?.botUsername,
+    telegramEnabled: Boolean(agent.telegramConfig?.enabled),
     githubConnected: Boolean(agent.githubToken),
     githubUsername: agent.githubUsername,
     tradingEnabled: agent.tradingEnabled,
+    // Config params are not secrets — just strategy/risk settings.
+    tradingConfig: agent.tradingConfig,
     services: agent.services,
+    // API keys: expose names + base URLs only (headers contain the secret).
+    // The client uses `apiKeysAdd` / `apiKeysRemove` delta ops to mutate
+    // the list without ever needing the headers round-trip.
+    apiKeys: (agent.apiKeys || []).map((k: any) => ({
+      name: k?.name,
+      baseUrl: k?.baseUrl,
+    })),
   }
 }
 
@@ -125,6 +144,23 @@ export async function PATCH(
       if (key in rawUpdates && !IMMUTABLE_FIELDS.has(key as keyof Agent)) {
         ;(safe as any)[key] = (rawUpdates as any)[key]
       }
+    }
+
+    // API-key delta ops. The projected GET doesn't return existing
+    // `apiKeys[].headers`, so the client can't rebuild the full array to
+    // PATCH `{ apiKeys: [...] }`. Accept append / remove-by-index against
+    // the stored list instead and apply them server-side.
+    const add = (rawUpdates as any).apiKeysAdd
+    const removeIdx = (rawUpdates as any).apiKeysRemove
+    if (add || typeof removeIdx === 'number') {
+      const current = Array.isArray(agent.apiKeys) ? [...agent.apiKeys] : []
+      if (add && typeof add === 'object' && typeof add.name === 'string' && typeof add.baseUrl === 'string' && add.headers && typeof add.headers === 'object') {
+        current.push({ name: add.name, baseUrl: add.baseUrl, headers: add.headers })
+      }
+      if (typeof removeIdx === 'number' && removeIdx >= 0 && removeIdx < current.length) {
+        current.splice(removeIdx, 1)
+      }
+      safe.apiKeys = current
     }
 
     const updated = await updateAgent(id, safe)
