@@ -7,12 +7,12 @@ import { Search, Clock, Check, AlertCircle, ArrowRight, Loader2 } from 'lucide-r
 import {
   fetchAllGifts,
   timeUntil,
-  tokenConfigFor,
   formatAmount,
   canonicaliseRecipient,
   recipientMatches,
   GiftEvent,
 } from '@/lib/culture'
+import { useGiftTokenMeta } from './useGiftTokenMeta'
 
 /**
  * Claim search: recipient types their X handle or .sui name, we filter the
@@ -35,6 +35,8 @@ export default function ClaimSearch() {
       .catch(e => setError(e?.message || 'Failed to load gifts'))
       .finally(() => setLoading(false))
   }, [submitted, suiClient])
+
+  const resolveMeta = useGiftTokenMeta(allGifts)
 
   const canon = submitted ? canonicaliseRecipient(submitted) : null
   const matches = canon
@@ -91,29 +93,27 @@ export default function ClaimSearch() {
       {pending.length > 0 && (
         <div className="space-y-2">
           <p className="text-[11px] font-semibold text-[#D4AF37] uppercase tracking-wide">Pending — action required</p>
-          {pending.map(g => <ClaimRow key={g.giftId} gift={g} />)}
+          {pending.map(g => <ClaimRow key={g.giftId} gift={g} meta={resolveMeta(g)} />)}
         </div>
       )}
       {claimed.length > 0 && (
         <div className="space-y-2 pt-2">
           <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Already claimed</p>
-          {claimed.map(g => <ClaimRow key={g.giftId} gift={g} />)}
+          {claimed.map(g => <ClaimRow key={g.giftId} gift={g} meta={resolveMeta(g)} />)}
         </div>
       )}
       {expired.length > 0 && (
         <div className="space-y-2 pt-2">
           <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Expired (refunded to sender)</p>
-          {expired.map(g => <ClaimRow key={g.giftId} gift={g} />)}
+          {expired.map(g => <ClaimRow key={g.giftId} gift={g} meta={resolveMeta(g)} />)}
         </div>
       )}
     </div>
   )
 }
 
-function ClaimRow({ gift }: { gift: GiftEvent }) {
-  const cfg = tokenConfigFor(gift.tokenType)
-  const decimals = cfg?.decimals ?? 9
-  const label = cfg?.label ?? gift.tokenSymbol
+function ClaimRow({ gift, meta }: { gift: GiftEvent; meta: { decimals: number; label: string } }) {
+  const { decimals, label } = meta
   const statusIcon = gift.claimed
     ? <Check className="w-3 h-3" />
     : gift.isExpired
