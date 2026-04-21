@@ -2,11 +2,20 @@
 
 import SendForm from './SendForm'
 import GiftsDashboard from './GiftsDashboard'
+import ClaimSearch from './ClaimSearch'
+import PublicFeed from './PublicFeed'
 
+/**
+ * Culture sub-tab of /staking. Single-scroll page:
+ *   1. Header + Send form            (senders)
+ *   2. Claim Search                   (recipients — search their handle)
+ *   3. Your sent airdrops             (senders' dashboard)
+ *   4. Public activity feed           (everyone — social proof)
+ */
 export default function CultureTab() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-      <div className="text-center mb-4">
+      <div className="text-center mb-2">
         <h1
           className="text-2xl font-bold tracking-wide"
           style={{
@@ -19,11 +28,14 @@ export default function CultureTab() {
           Culture — Send Airdrops by X Handle
         </h1>
         <p className="text-sm text-gray-500 mt-2">
-          Lock SUI, AIDA, or USDC for any X user. They verify with X and claim from their own wallet. Nothing claimed in 48h refunds to you.
+          Lock SUI, AIDA, or USDC for any X user or .sui name. They verify with X (or their wallet for .sui) and claim from their own wallet. Nothing claimed in 48h refunds to you.
         </p>
       </div>
+
       <SendForm />
+      <ClaimSearch />
       <GiftsDashboard />
+      <PublicFeed />
     </div>
   )
 }

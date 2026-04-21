@@ -56,6 +56,39 @@ export function normaliseXHandle(raw: string): string {
     .trim()
 }
 
+/** Recipient-handle kind, inferred from the stored string. */
+export type RecipientKind = 'x' | 'sui' | 'unknown'
+
+export function detectRecipientKind(raw: string): RecipientKind {
+  const s = (raw || '').toLowerCase().trim()
+  if (!s) return 'unknown'
+  if (s.includes('x.com/') || s.includes('twitter.com/') || s.startsWith('@')) return 'x'
+  if (s.endsWith('.sui')) return 'sui'
+  // Bare word: assume X handle (most common case from our send form)
+  return 'x'
+}
+
+/** Canonicalise a recipient query for matching against stored handles. */
+export function canonicaliseRecipient(raw: string): { kind: RecipientKind; value: string } {
+  const kind = detectRecipientKind(raw)
+  if (kind === 'sui') {
+    const cleaned = raw.toLowerCase().trim()
+    return { kind, value: cleaned.endsWith('.sui') ? cleaned : `${cleaned}.sui` }
+  }
+  return { kind, value: normaliseXHandle(raw) }
+}
+
+/** Match a stored gift handle against a canonicalised query. */
+export function recipientMatches(storedHandle: string, query: { kind: RecipientKind; value: string }): boolean {
+  if (!query.value) return false
+  const stored = (storedHandle || '').toLowerCase().trim()
+  if (query.kind === 'sui') {
+    return stored === query.value
+  }
+  // X-handle compare: strip any @ / URL on both sides
+  return normaliseXHandle(stored) === query.value
+}
+
 export function shortenAddr(addr: string): string {
   return addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : ''
 }
