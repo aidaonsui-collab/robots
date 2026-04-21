@@ -32,7 +32,7 @@ async function getIncomingFunders(address: string): Promise<string[]> {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { slug: string } }
+  _context: { params: Promise<{ slug: string }> }
 ) {
   const addressesParam = req.nextUrl.searchParams.get('addresses')
   if (!addressesParam) return NextResponse.json({ clusters: {}, clusterCount: 0 })
@@ -40,11 +40,9 @@ export async function GET(
   const addresses = addressesParam.split(',').filter(Boolean).slice(0, 30)
   const addressSet = new Set(addresses.map(a => a.toLowerCase()))
 
-  // Fetch funders for all addresses in parallel
   const funderResults = await Promise.all(
     addresses.map(async addr => {
       const funders = await getIncomingFunders(addr)
-      // Exclude funders that are themselves top holders
       const external = funders.filter(f => !addressSet.has(f.toLowerCase()))
       const counts: Record<string, number> = {}
       for (const f of external) counts[f] = (counts[f] || 0) + 1
@@ -53,7 +51,6 @@ export async function GET(
     })
   )
 
-  // Group by primary funder
   const funderToCluster: Record<string, number> = {}
   const clusters: Record<string, number> = {}
   let nextId = 0
@@ -66,7 +63,6 @@ export async function GET(
     clusters[addr] = funderToCluster[primaryFunder]
   }
 
-  // Only keep clusters with 2+ members (single-member clusters aren't meaningful)
   const clusterCounts: Record<number, number> = {}
   for (const cId of Object.values(clusters)) {
     clusterCounts[cId] = (clusterCounts[cId] || 0) + 1
