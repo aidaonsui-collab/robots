@@ -33,11 +33,6 @@ export const CULTURE_TOKENS: CultureTokenOption[] = [
 
 // ── Coin-type normalisation ──────────────────────────────────────────────
 
-/**
- * Coerce a coin-type carrier (string, `{ name: string }`, Uint8Array from
- * a BCS TypeName, anything reasonable) into a canonical string with an
- * `0x` address prefix suitable for `getCoinMetadata`.
- */
 export function normalizeCoinType(raw: unknown): string {
   if (raw == null) return ''
   let s: string
@@ -62,7 +57,7 @@ export function normalizeCoinType(raw: unknown): string {
   if (genericInner) s = genericInner
 
   const parts = s.split('::')
-  if (parts.length < 3) return s
+  if (parts.length < 3) return ''
   const [addr, ...rest] = parts
   const normalizedAddr = addr.startsWith('0x') ? addr : `0x${addr}`
   return [normalizedAddr, ...rest].join('::')
@@ -178,18 +173,57 @@ export interface GiftEvent {
 }
 
 /**
- * Extract the generic parameter `<T>` from an Object's type string. The
- * object's type always looks like `0x<pkg>::culture_fund::Gift<0x…::mod::T>`,
- * which is the cleanest and most reliable source of the coin type — event
- * payloads are less predictable across SDK versions.
+ * Best-effort extraction of the coin type T from a Gift object.
+ *
+ * Cases we handle, in priority order:
+ *  1. Generic outer struct — `Gift<T>` in `content.type` — clean `<…>`.
+ *  2. Non-generic Gift whose coin is stored in a nested `balance:
+ *     Balance<T>` field. Walk `content.fields` looking for any nested
+ *     object whose own `.type` carries a `<T>`.
  */
 function coinTypeFromObject(obj: any): string {
-  const typeStr: string =
+  const outerType: string =
     obj?.data?.content?.type ||
     obj?.data?.type ||
     ''
-  const inner = typeStr.match(/<(.+)>$/)?.[1] || ''
-  return normalizeCoinType(inner)
+  const outerInner = outerType.match(/<(.+)>$/)?.[1]
+  if (outerInner) {
+    const norm = normalizeCoinType(outerInner)
+    if (norm) return norm
+  }
+
+  const fields = obj?.data?.content?.fields
+  if (fields && typeof fields === 'object') {
+    // Depth-limited walk — balance-style fields live one level deep on
+    // every gift struct I've seen, but tolerate a little nesting just
+    // in case the contract wraps things.
+    const seen = new Set<any>()
+    const walk = (val: any, depth: number): string => {
+      if (!val || typeof val !== 'object' || depth > 3 || seen.has(val)) return ''
+      seen.add(val)
+      if (typeof val.type === 'string') {
+        const m = val.type.match(/<(.+)>$/)?.[1]
+        if (m) {
+          const norm = normalizeCoinType(m)
+          if (norm) return norm
+        }
+      }
+      if (val.fields && typeof val.fields === 'object') {
+        const found = walk(val.fields, depth + 1)
+        if (found) return found
+      }
+      for (const k of Object.keys(val)) {
+        if (k === 'type' || k === 'fields') continue
+        const found = walk(val[k], depth + 1)
+        if (found) return found
+      }
+      return ''
+    }
+    const found = walk(fields, 0)
+    if (found) return found
+  }
+
+  return ''
 }
 
 export async function fetchGiftById(client: SuiClient, giftId: string): Promise<GiftEvent | null> {
@@ -236,11 +270,16 @@ export async function fetchAllGifts(client: SuiClient): Promise<GiftEvent[]> {
     const fields = (obj?.data?.content as any)?.fields
     const expiresAt = Number(p.expires_at ?? 0)
 
-    // Prefer the coin type extracted from the gift object's full type
-    // string (always includes the generic parameter cleanly). Fall back to
-    // the event payload only if the object is missing for some reason.
+    // Gift object drives tokenType extraction — covers both generic
+    // `Gift<T>` and non-generic `Gift { balance: Balance<T> }` layouts.
+    // Only fall through to the event's short symbol if the object isn't
+    // hydrated at all, and even then require `::` segments so a bare
+    // "DEEP" doesn't poison the display.
     let tokenType = coinTypeFromObject(obj)
-    if (!tokenType) tokenType = normalizeCoinType(p.token_type)
+    if (!tokenType) {
+      const eventFallback = normalizeCoinType(p.token_type)
+      if (eventFallback.includes('::')) tokenType = eventFallback
+    }
 
     const tokenParts = tokenType.split('::')
     return {
@@ -249,7 +288,7 @@ export async function fetchAllGifts(client: SuiClient): Promise<GiftEvent[]> {
       recipientHandle: p.recipient,
       amount:          String(p.amount ?? '0'),
       tokenType,
-      tokenSymbol:     tokenParts[tokenParts.length - 1] || 'TOKEN',
+      tokenSymbol:     tokenParts[tokenParts.length - 1] || String(p.token_type ?? 'TOKEN'),
       message:         p.message ?? '',
       expiresAt,
       timestampMs:     Number(e.timestampMs ?? 0),
