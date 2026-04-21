@@ -7,10 +7,10 @@ import {
   fetchAllGifts,
   timeUntil,
   shortenAddr,
-  tokenConfigFor,
   formatAmount,
   GiftEvent,
 } from '@/lib/culture'
+import { useGiftTokenMeta } from './useGiftTokenMeta'
 
 type Filter = 'sent' | 'received'
 
@@ -29,6 +29,8 @@ export default function GiftsDashboard() {
       .catch(() => setGifts([]))
       .finally(() => setLoading(false))
   }, [account?.address, suiClient])
+
+  const resolveMeta = useGiftTokenMeta(gifts)
 
   const mine = gifts.filter(g =>
     filter === 'sent'
@@ -73,9 +75,7 @@ export default function GiftsDashboard() {
       ) : (
         <div className="space-y-2">
           {mine.map(g => {
-            const cfg = tokenConfigFor(g.tokenType)
-            const decimals = cfg?.decimals ?? 9
-            const label = cfg?.label ?? g.tokenSymbol
+            const { decimals, label } = resolveMeta(g)
             return (
               <div key={g.giftId} className="p-3 rounded-xl bg-black/30 border border-white/5 flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
