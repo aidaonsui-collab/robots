@@ -8,7 +8,7 @@ import {
   Activity, BarChart3, Settings, MessageSquare, Zap, CreditCard, Github, ExternalLink,
   Sparkles, Bot, Save, RotateCcw, Trash2, ChevronDown, Globe, Brain, Cpu, Hash,
   MessageCircle, X, Check, AlertTriangle, Download, Key, Plus, Shield, TrendingUp,
-  Store, Package, Clock, Wallet
+  Store, Package, Clock, Wallet, Loader2
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -533,6 +533,11 @@ export default function AgentDashboardPage() {
   const [marketplaceLoading, setMarketplaceLoading] = useState(false)
   const [addingService, setAddingService] = useState(false)
   const [newService, setNewService] = useState({ name: '', description: '', price: '', category: 'analysis' })
+  // Agent-proposed service drafts (LLM-generated via /services/propose)
+  const [proposeLoading, setProposeLoading] = useState(false)
+  const [proposeError, setProposeError] = useState<string | null>(null)
+  const [serviceDrafts, setServiceDrafts] = useState<Array<{ name: string; description: string; price: number; category: string; reasoning?: string }>>([])
+  const [publishingDraftIdx, setPublishingDraftIdx] = useState<number | null>(null)
   const [hiringAgent, setHiringAgent] = useState<string | null>(null)
   const [hirePrompt, setHirePrompt] = useState('')
   const [hiring, setHiring] = useState(false)
@@ -1949,14 +1954,132 @@ export default function AgentDashboardPage() {
                   <Package className="w-5 h-5 text-[#D4AF37]" />
                   My Services
                 </h3>
-                <button
-                  onClick={() => setAddingService(!addingService)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#D4AF37]/10 text-[#D4AF37] text-xs font-medium hover:bg-[#D4AF37]/20 transition-colors"
-                >
-                  <Plus className="w-3 h-3" />
-                  Add Service
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setProposeLoading(true)
+                      setProposeError(null)
+                      try {
+                        const res = await fetch(`/api/agents/${agentId}/services/propose`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ count: 3 }),
+                        })
+                        const data = await res.json()
+                        if (!res.ok || !data.drafts?.length) {
+                          setProposeError(data.error || 'Agent could not draft services')
+                        } else {
+                          setServiceDrafts(data.drafts)
+                        }
+                      } catch {
+                        setProposeError('Network error — try again')
+                      } finally {
+                        setProposeLoading(false)
+                      }
+                    }}
+                    disabled={proposeLoading}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 text-gray-300 text-xs font-medium hover:bg-white/10 transition-colors disabled:opacity-50"
+                    title={`Let ${agent?.name || 'your agent'} propose services based on its skills`}
+                  >
+                    {proposeLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <span>✨</span>}
+                    {proposeLoading ? 'Drafting…' : 'Propose with AI'}
+                  </button>
+                  <button
+                    onClick={() => setAddingService(!addingService)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#D4AF37]/10 text-[#D4AF37] text-xs font-medium hover:bg-[#D4AF37]/20 transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add Service
+                  </button>
+                </div>
               </div>
+
+              {/* Propose error banner */}
+              {proposeError && (
+                <div className="mb-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+                  {proposeError}
+                  <button onClick={() => setProposeError(null)} className="ml-2 underline">dismiss</button>
+                </div>
+              )}
+
+              {/* Agent-proposed drafts — reviewable before publishing */}
+              {serviceDrafts.length > 0 && (
+                <div className="mb-4 p-4 bg-[#D4AF37]/5 rounded-xl border border-[#D4AF37]/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold text-[#D4AF37] flex items-center gap-1.5">
+                      <span>✨</span> Drafts from your agent — review before publishing
+                    </div>
+                    <button
+                      onClick={() => setServiceDrafts([])}
+                      className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
+                    >
+                      Dismiss all
+                    </button>
+                  </div>
+                  {serviceDrafts.map((d, i) => (
+                    <div key={i} className="p-3 bg-black/30 rounded-lg border border-white/5 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-white truncate">{d.name}</p>
+                          <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{d.description}</p>
+                          {d.reasoning && (
+                            <p className="text-[10px] text-gray-500 mt-1.5 italic">Why: {d.reasoning}</p>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <span className="text-sm font-bold text-[#D4AF37] tabular-nums">{d.price} USDC</span>
+                          <span className="text-[10px] text-gray-500 uppercase">{d.category}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={async () => {
+                            setPublishingDraftIdx(i)
+                            try {
+                              const res = await fetch(`/api/agents/${agentId}/services`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: d.name, description: d.description, price: d.price, category: d.category }),
+                              })
+                              const data = await res.json()
+                              if (data.success) {
+                                setMyServices(data.services)
+                                setServiceDrafts(prev => prev.filter((_, j) => j !== i))
+                              } else {
+                                alert('Error: ' + (data.error || 'Failed to publish'))
+                              }
+                            } catch {
+                              alert('Failed to publish')
+                            } finally {
+                              setPublishingDraftIdx(null)
+                            }
+                          }}
+                          disabled={publishingDraftIdx !== null}
+                          className="px-3 py-1.5 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+                        >
+                          {publishingDraftIdx === i ? 'Publishing…' : 'Publish'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setNewService({ name: d.name, description: d.description, price: String(d.price), category: d.category })
+                            setAddingService(true)
+                            setServiceDrafts(prev => prev.filter((_, j) => j !== i))
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-white/5 text-gray-300 text-xs font-medium hover:bg-white/10 transition-colors"
+                        >
+                          Edit first
+                        </button>
+                        <button
+                          onClick={() => setServiceDrafts(prev => prev.filter((_, j) => j !== i))}
+                          className="px-3 py-1.5 rounded-lg text-gray-500 text-xs hover:text-gray-300 transition-colors"
+                        >
+                          Skip
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Add Service Form */}
               {addingService && (
