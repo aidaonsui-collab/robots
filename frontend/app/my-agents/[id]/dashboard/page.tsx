@@ -11,6 +11,7 @@ import {
   Store, Package, Clock, Wallet, Loader2
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { signAuthEnvelope } from '@/lib/auth-sign-client'
 
 interface Message {
   id: string
@@ -739,16 +740,46 @@ export default function AgentDashboardPage() {
     } catch { /* worker sync is best-effort */ }
   }
 
+  // Every agent mutation requires a Sui-signed envelope — one wallet
+  // signature per save. `signAndPatch` prompts the wallet, attaches the
+  // `_auth` envelope to the body, and hits PATCH. Throws if the user
+  // rejects the signature prompt; caller's catch block handles UI state.
+  const signAndPatch = async (updates: Record<string, any>) => {
+    if (!address) throw new Error('Connect wallet first')
+    const _auth = await signAuthEnvelope({
+      action: 'agent.patch',
+      resourceId: agentId,
+      address,
+      signPersonalMessage,
+    })
+    return fetch(`/api/agents/${agentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...updates, _auth }),
+    })
+  }
+
+  const signAndDeleteAgent = async () => {
+    if (!address) throw new Error('Connect wallet first')
+    const _auth = await signAuthEnvelope({
+      action: 'agent.delete',
+      resourceId: agentId,
+      address,
+      signPersonalMessage,
+    })
+    return fetch(`/api/agents/${agentId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ _auth }),
+    })
+  }
+
   const handleSaveGeneral = async () => {
     setSaving(true)
     setSaveSuccess(null)
     try {
       const updates = { name: editName, description: editDescription }
-      const res = await fetch(`/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
+      const res = await signAndPatch(updates)
       if (res.ok) {
         const updated = await res.json()
         setAgent((prev: any) => ({ ...prev, ...updated }))
@@ -765,11 +796,7 @@ export default function AgentDashboardPage() {
     setSaveSuccess(null)
     try {
       const updates = { personality: editPersonality }
-      const res = await fetch(`/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
+      const res = await signAndPatch(updates)
       if (res.ok) {
         const updated = await res.json()
         setAgent((prev: any) => ({ ...prev, ...updated }))
@@ -786,11 +813,7 @@ export default function AgentDashboardPage() {
     setModelDropdownOpen(false)
     try {
       const updates = { llmModel: modelId }
-      await fetch(`/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
+      await signAndPatch(updates)
       setAgent((prev: any) => ({ ...prev, llmModel: modelId }))
       syncToWorker(updates)
       setSaveSuccess('model')
@@ -807,11 +830,7 @@ export default function AgentDashboardPage() {
     setEditSkills(newSkills)
     try {
       const updates = { skills: newSkills }
-      await fetch(`/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
+      await signAndPatch(updates)
       setAgent((prev: any) => ({ ...prev, skills: newSkills }))
       syncToWorker(updates)
     } catch (err) { console.error('Save skills error:', err) }
@@ -819,11 +838,7 @@ export default function AgentDashboardPage() {
 
   const handleStatusChange = async (newStatus: 'active' | 'paused' | 'stopped') => {
     try {
-      const res = await fetch(`/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      })
+      const res = await signAndPatch({ status: newStatus })
       if (res.ok) {
         const updated = await res.json()
         setAgent((prev: any) => ({ ...prev, ...updated }))
@@ -845,11 +860,7 @@ export default function AgentDashboardPage() {
       headers: { [newApiKey.headerKey]: newApiKey.headerValue },
     }]
     try {
-      const res = await fetch(`/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKeys }),
-      })
+      const res = await signAndPatch({ apiKeys })
       if (res.ok) {
         const updated = await res.json()
         setAgent((prev: any) => ({ ...prev, ...updated }))
@@ -865,11 +876,7 @@ export default function AgentDashboardPage() {
     const apiKeys = [...(agent.apiKeys || [])]
     apiKeys.splice(index, 1)
     try {
-      const res = await fetch(`/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKeys }),
-      })
+      const res = await signAndPatch({ apiKeys })
       if (res.ok) {
         const updated = await res.json()
         setAgent((prev: any) => ({ ...prev, ...updated }))
@@ -888,11 +895,7 @@ export default function AgentDashboardPage() {
 
   const handleSaveTradingConfig = async () => {
     try {
-      const res = await fetch(`/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tradingEnabled: true, tradingConfig }),
-      })
+      const res = await signAndPatch({ tradingEnabled: true, tradingConfig })
       if (res.ok) {
         const updated = await res.json()
         setAgent((prev: any) => ({ ...prev, ...updated }))
@@ -917,7 +920,7 @@ export default function AgentDashboardPage() {
   const handleDeleteAgent = async () => {
     try {
       await handleDeprovision()
-      const res = await fetch(`/api/agents/${agentId}`, { method: 'DELETE' })
+      const res = await signAndDeleteAgent()
       if (res.ok) router.push('/my-agents')
     } catch (err) { console.error('Delete error:', err) }
   }
@@ -2955,12 +2958,10 @@ export default function AgentDashboardPage() {
                 {agent.tradingEnabled && (
                   <button
                     onClick={async () => {
-                      const res = await fetch(`/api/agents/${agentId}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ tradingEnabled: false }),
-                      })
-                      if (res.ok) setAgent((prev: any) => ({ ...prev, tradingEnabled: false }))
+                      try {
+                        const res = await signAndPatch({ tradingEnabled: false })
+                        if (res.ok) setAgent((prev: any) => ({ ...prev, tradingEnabled: false }))
+                      } catch (err) { console.error('Disable trading error:', err) }
                     }}
                     className="w-full py-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg hover:bg-red-500/20 transition-colors"
                   >
