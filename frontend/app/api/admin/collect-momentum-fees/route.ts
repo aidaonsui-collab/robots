@@ -3,6 +3,7 @@ import { SuiClient } from '@mysten/sui/client'
 import { Transaction } from '@mysten/sui/transactions'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
+import type { SuiObjectChange } from '@mysten/sui/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,10 +31,23 @@ function getAdminKeypair(): Ed25519Keypair {
   }
 }
 
+// Narrow SuiObjectChange to the 'created' variant, which carries objectType/objectId.
+type CreatedChange = Extract<SuiObjectChange, { type: 'created' }>
+function isCreated(c: SuiObjectChange): c is CreatedChange {
+  return c.type === 'created'
+}
+
 export async function GET(req: Request) {
-  const authHeader = req.headers.get('authorization')
+  // Fail-closed auth (was `if (cronSecret && ...)` which silently disabled
+  // auth when the env var was unset — this endpoint signs with
+  // ADMIN_WALLET_SECRET so an open variant lets anyone spam fee collection).
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    console.error('[collect-momentum-fees] CRON_SECRET is not configured')
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 503 })
+  }
+  const authHeader = req.headers.get('authorization')
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   if (!process.env.ADMIN_WALLET_SECRET) {
@@ -49,9 +63,7 @@ export async function GET(req: Request) {
     tx.setSender(adminAddress)
     tx.setGasBudget(100_000_000)
 
-    // Mirror the working pattern from fix-pool/route.ts:
-    // collect::fee(pool, position, clock, version) — 4 args, returns (Coin<X>, Coin<Y>)
-    // Pool type = Pool<HERO,AIDA> → type args [HERO, AIDA]
+    // collect::fee(pool, position, clock, version) returns (Coin<X>, Coin<Y>)
     const allCoins: any[] = []
 
     const [feeCoinX, feeCoinY] = tx.moveCall({
@@ -76,10 +88,9 @@ export async function GET(req: Request) {
 
     const ok = result.effects?.status?.status === 'success'
 
-    // Extract amounts from created coin objects
-    let amounts: {x?: string, y?: string} = {}
+    const amounts: { x?: string; y?: string } = {}
     if (ok && result.objectChanges) {
-      const created = result.objectChanges.filter((c: any) => c.type === 'created')
+      const created = result.objectChanges.filter(isCreated)
       for (const c of created) {
         const t = c.objectType || ''
         if (t.includes('::hero::HERO')) amounts.x = c.objectId
