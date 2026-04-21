@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
 import Link from 'next/link'
 import { Search, Clock, Check, AlertCircle, ArrowRight, Loader2 } from 'lucide-react'
@@ -12,13 +12,9 @@ import {
   recipientMatches,
   GiftEvent,
 } from '@/lib/culture'
+import { useCultureRefresh } from '@/lib/cultureBus'
 import { useGiftTokenMeta } from './useGiftTokenMeta'
 
-/**
- * Claim search: recipient types their X handle or .sui name, we filter the
- * public gift list, and link each unclaimed match to the standard claim
- * page at /airdrops/claim/<giftId> (which handles the X-OAuth verify step).
- */
 export default function ClaimSearch() {
   const suiClient = useSuiClient()
   const [query, setQuery] = useState('')
@@ -27,7 +23,7 @@ export default function ClaimSearch() {
   const [error, setError] = useState<string | null>(null)
   const [allGifts, setAllGifts] = useState<GiftEvent[]>([])
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     if (!submitted) return
     setLoading(true); setError(null)
     fetchAllGifts(suiClient)
@@ -35,6 +31,9 @@ export default function ClaimSearch() {
       .catch(e => setError(e?.message || 'Failed to load gifts'))
       .finally(() => setLoading(false))
   }, [submitted, suiClient])
+
+  useEffect(() => { reload() }, [reload])
+  useCultureRefresh(reload)
 
   const resolveMeta = useGiftTokenMeta(allGifts)
 
