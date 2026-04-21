@@ -6,33 +6,31 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, AlertCircle } from 'lucide-react'
 
-const CALLBACK_VERSION = 'v2-2026-04-21-diag'
-
+/**
+ * X OAuth2 redirect target. X sends the user here with ?code&state after
+ * authorization. We POST those to /api/culture/auth/verify, stash the
+ * resulting verifyToken in sessionStorage under the gift id, then forward
+ * the user back to the claim page.
+ */
 export default function AirdropCallbackPage() {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    console.log('[culture/callback]', CALLBACK_VERSION, 'loaded, href=', window.location.href)
-
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
     const state = params.get('state')
     const err = params.get('error')
 
     if (err) {
-      console.warn('[culture/callback] X returned error param:', err, params.get('error_description'))
       setError(params.get('error_description') || err)
       return
     }
     if (!code || !state) {
-      console.warn('[culture/callback] missing code/state, query was', window.location.search)
       setError('Missing code/state from X — return to the claim page and try again.')
       return
     }
-
-    console.log('[culture/callback] posting to /api/culture/auth/verify', { code: code.slice(0, 8) + '…', state: state.slice(0, 8) + '…' })
 
     ;(async () => {
       try {
@@ -42,7 +40,6 @@ export default function AirdropCallbackPage() {
           body: JSON.stringify({ code, state }),
         })
         const data = await res.json()
-        console.log('[culture/callback] verify response', res.status, data)
         if (!res.ok) throw new Error(data.error || 'Verification failed')
 
         const { giftId, verifyToken, username } = data
@@ -51,15 +48,10 @@ export default function AirdropCallbackPage() {
             `culture:verify:${giftId}`,
             JSON.stringify({ verifyToken, username, ts: Date.now() })
           )
-          console.log('[culture/callback] sessionStorage set for', giftId, 'username=', username)
-        } catch (e) {
-          console.warn('[culture/callback] sessionStorage.setItem failed', e)
-        }
+        } catch { /* sessionStorage disabled — claim page will just re-verify */ }
 
-        console.log('[culture/callback] redirecting to /airdrops/claim/' + giftId)
         router.replace(`/airdrops/claim/${giftId}`)
       } catch (e: any) {
-        console.error('[culture/callback] verify failed', e)
         setError(e?.message || 'Could not verify with X')
       }
     })()
