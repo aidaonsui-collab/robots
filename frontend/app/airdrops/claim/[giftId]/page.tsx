@@ -12,6 +12,7 @@ import { Gift, Clock, ExternalLink, Loader2, AlertCircle, Check, ArrowLeft } fro
 import {
   CULTURE_LATEST_PKG,
   CULTURE_CONFIG_ID,
+  KNOWN_COIN_META,
   SUI_CLOCK,
   fetchGiftById,
   timeUntil,
@@ -19,6 +20,7 @@ import {
   formatAmount,
   resolveCoinMeta,
   detectRecipientKind,
+  tickerFrom,
   TokenMeta,
   GiftEvent,
 } from '@/lib/culture'
@@ -101,13 +103,23 @@ export default function ClaimPage() {
   }, [giftId, suiClient, account?.address])
 
   useEffect(() => {
-    if (!gift?.tokenType) return
+    if (!gift) return
     let cancelled = false
-    resolveCoinMeta(suiClient, gift.tokenType).then(m => {
-      if (!cancelled) setTokenMeta(m)
-    })
+    if (gift.tokenType) {
+      resolveCoinMeta(suiClient, gift.tokenType).then(m => {
+        if (!cancelled) setTokenMeta(m)
+      })
+    } else {
+      // DF coin-type extraction failed for this gift. Match the event's
+      // ticker against the KNOWN_COIN_META safety net so non-9-decimal
+      // coins (e.g. DEEP = 6 decimals) still render at the right scale
+      // instead of defaulting to 9 and showing 1/1000 of the real value.
+      const sym = tickerFrom(gift.tokenSymbol)
+      const known = KNOWN_COIN_META.find(k => k.symbol.toUpperCase() === sym.toUpperCase())
+      if (known) setTokenMeta({ decimals: known.decimals, symbol: known.symbol })
+    }
     return () => { cancelled = true }
-  }, [gift?.tokenType, suiClient])
+  }, [gift, suiClient])
 
   useEffect(() => {
     if (step !== 'needs-connect' || !account?.address || !gift) return

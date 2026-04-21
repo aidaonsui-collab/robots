@@ -94,9 +94,11 @@ for (const t of CULTURE_TOKENS) {
   coinMetaCache.set(t.type, { decimals: t.decimals, symbol: t.symbol })
 }
 for (const k of KNOWN_COIN_META) {
-  // Don't overwrite preset entries.
-  if (!coinMetaCache.has(k.type)) {
-    coinMetaCache.set(k.type, { decimals: k.decimals, symbol: k.symbol })
+  // Seed under the normalised key so a later lookup (which normalises)
+  // can't miss due to address-format drift. Don't overwrite preset entries.
+  const key = normalizeCoinType(k.type)
+  if (key && !coinMetaCache.has(key)) {
+    coinMetaCache.set(key, { decimals: k.decimals, symbol: k.symbol })
   }
 }
 const coinMetaInflight = new Map<string, Promise<TokenMeta>>()
