@@ -12,14 +12,9 @@ import {
   SUI_COIN_TYPE,
   normaliseXHandle,
 } from '@/lib/culture'
+import { emitCultureRefresh } from '@/lib/cultureBus'
 
-// Sentinel value in the token <select> that switches the form to a
-// freeform coin-type input. Anything the wallet holds can be gifted.
 const CUSTOM_TOKEN = '__custom__'
-
-// A fully-qualified Sui coin type looks like `0x<hex>::<module>::<Name>`.
-// We accept any hex length — packages can be upgraded but CoinMetadata
-// lookup is authoritative.
 const COIN_TYPE_RE = /^0x[0-9a-fA-F]+::[A-Za-z0-9_]+::[A-Za-z0-9_]+$/
 
 type ResolvedToken = {
@@ -52,7 +47,6 @@ export default function SendForm() {
 
   const isCustom = tokenSymbol === CUSTOM_TOKEN
 
-  // Debounced CoinMetadata + balance lookup for custom coin types.
   useEffect(() => {
     if (!isCustom) { setCustomStatus({ kind: 'idle' }); return }
     const raw = customType.trim()
@@ -96,7 +90,6 @@ export default function SendForm() {
     return () => { cancelled = true; clearTimeout(t) }
   }, [isCustom, customType, account?.address, suiClient])
 
-  // Active token used for label + send. Either a preset or the resolved custom one.
   const activeToken: ResolvedToken | null = useMemo(() => {
     if (isCustom) {
       return customStatus.kind === 'resolved' ? customStatus.token : null
@@ -160,6 +153,8 @@ export default function SendForm() {
       await suiClient.waitForTransaction({ digest: result.digest, options: { showEffects: true } })
       setSuccessDigest(result.digest)
       setRecipient(''); setAmount(''); setMessage('')
+      // Any open dashboards should re-query immediately.
+      emitCultureRefresh()
     } catch (e: any) {
       setError(e?.message || 'Failed to send gift')
     } finally {
