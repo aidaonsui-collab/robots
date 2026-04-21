@@ -2,39 +2,55 @@
 
 import { useEffect, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
-import { CULTURE_TOKENS, GiftEvent } from '@/lib/culture'
+import { CULTURE_TOKENS, GiftEvent, normalizeCoinType } from '@/lib/culture'
+
+// Bump this whenever the hook's logic changes so we can verify in the
+// browser console that the newest bundle is loaded.
+const HOOK_VERSION = 'v3-2026-04-21-diag'
 
 export interface TokenMeta {
   decimals: number
   symbol: string
 }
 
-// Module-level cache shared across every mount so each unknown coin type
-// is only fetched once per session. Seeded with the built-in SUI / AIDA /
-// USDC configs so presets are resolved synchronously on first render.
 const cache = new Map<string, TokenMeta>()
 for (const t of CULTURE_TOKENS) {
   cache.set(t.type, { decimals: t.decimals, symbol: t.symbol })
 }
 
-/**
- * Look up display metadata (decimals + symbol) for the coin types carried
- * by a list of gifts, falling back to the gift's stored symbol + 9 decimals
- * while the chain lookup is in flight.
- *
- * Returns a stable `resolve(gift)` helper; the component re-renders once
- * any newly-fetched metadata lands in the cache.
- */
+if (typeof window !== 'undefined') {
+  console.log('[culture/useGiftTokenMeta]', HOOK_VERSION, 'loaded — cache seeded with', Array.from(cache.keys()))
+}
+
 export function useGiftTokenMeta(gifts: GiftEvent[]) {
   const suiClient = useSuiClient()
   const [, setVersion] = useState(0)
 
   useEffect(() => {
     if (!gifts.length) return
-    const unknown = Array.from(
-      new Set(gifts.map(g => g.tokenType).filter(Boolean))
-    ).filter(t => !cache.has(t))
-    if (!unknown.length) return
+
+    // Defensive: normalise here too, so a stray unprefixed type from any
+    // upstream code path still reaches the RPC in the correct form.
+    const normalized = gifts
+      .map(g => normalizeCoinType(g.tokenType))
+      .filter(Boolean) as string[]
+
+    const unknown = Array.from(new Set(normalized)).filter(t => !cache.has(t))
+    if (!unknown.length) {
+      if (gifts.length) {
+        console.log(
+          '[culture/useGiftTokenMeta] all gift types already cached —',
+          gifts.map(g => ({
+            raw: g.tokenType,
+            normalized: normalizeCoinType(g.tokenType),
+            cached: cache.get(normalizeCoinType(g.tokenType)),
+          }))
+        )
+      }
+      return
+    }
+
+    console.log('[culture/useGiftTokenMeta] resolving unknown types:', unknown)
 
     let cancelled = false
     ;(async () => {
@@ -47,16 +63,22 @@ export function useGiftTokenMeta(gifts: GiftEvent[]) {
         const typeStr = unknown[i]
         const lastSeg = typeStr.split('::').pop() || 'TOKEN'
         if (r.status === 'fulfilled' && r.value) {
-          cache.set(typeStr, {
+          const resolved = {
             decimals: r.value.decimals,
             symbol: r.value.symbol || lastSeg,
-          })
+          }
+          cache.set(typeStr, resolved)
           changed = true
+          console.log('[culture/useGiftTokenMeta] resolved', typeStr, '→', resolved)
         } else {
-          // Cache a best-guess so we stop re-fetching a type whose
-          // creator never published CoinMetadata on chain.
           cache.set(typeStr, { decimals: 9, symbol: lastSeg })
           changed = true
+          console.warn(
+            '[culture/useGiftTokenMeta] FAILED to resolve',
+            typeStr,
+            r.status === 'rejected' ? (r.reason?.message || r.reason) : 'value=null',
+            '→ falling back to 9 decimals /', lastSeg
+          )
         }
       })
       if (changed) setVersion(v => v + 1)
@@ -66,7 +88,8 @@ export function useGiftTokenMeta(gifts: GiftEvent[]) {
   }, [gifts, suiClient])
 
   const resolve = (gift: GiftEvent): { decimals: number; label: string } => {
-    const hit = cache.get(gift.tokenType)
+    const key = normalizeCoinType(gift.tokenType)
+    const hit = cache.get(key)
     if (hit) return { decimals: hit.decimals, label: hit.symbol }
     return { decimals: 9, label: gift.tokenSymbol || 'TOKEN' }
   }
