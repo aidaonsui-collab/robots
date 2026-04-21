@@ -4,9 +4,11 @@ const nextConfig = {
   serverExternalPackages: ['@mmt-finance/clmm-sdk'],
   turbopack: {},
   typescript: {
-    // @mysten/sui and @mysten/wallet-standard bundle conflicting Transaction
-    // types (#private mismatch). Safe to ignore — works fine at runtime.
-    ignoreBuildErrors: true,
+    // Fail the build on type errors. If @mysten/sui and
+    // @mysten/wallet-standard ship conflicting Transaction types, pin
+    // them via `overrides` in package.json or suppress the single
+    // offending line with `@ts-expect-error` — do NOT re-enable this.
+    ignoreBuildErrors: false,
   },
 }
 
