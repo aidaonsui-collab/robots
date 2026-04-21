@@ -18,15 +18,18 @@ export const metadata: Metadata = {
     siteName: 'Odyssey',
     locale: 'en_US',
     type: 'website',
+    images: [
+      {
+        url: 'https://i.ibb.co/3yzP9JTB/photo-2026-03-31-15-48-35.jpg',
+        alt: 'Odyssey — Viking longship',
+      },
+    ],
   },
   twitter: {
-    // Upgraded from `summary` to `summary_large_image` so X renders the
-    // banner-style preview using the auto-generated card in
-    // `app/twitter-image.tsx`. No need to list images explicitly — the
-    // file-convention export wires it up automatically.
     card: 'summary_large_image',
     title: 'Odyssey 2.0 - AI Agent Launchpad',
     description: 'Journey into the world of Ai.',
+    images: ['https://i.ibb.co/3yzP9JTB/photo-2026-03-31-15-48-35.jpg'],
   },
 }
 
