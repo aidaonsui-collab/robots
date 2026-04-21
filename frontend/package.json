@@ -50,6 +50,7 @@
     "typescript": "^5.6.0"
   },
   "overrides": {
-    "lru-cache": "^11.0.0"
+    "lru-cache": "^11.0.0",
+    "@mysten/sui": "$@mysten/sui"
   }
 }
