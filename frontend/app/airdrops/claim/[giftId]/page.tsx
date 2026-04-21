@@ -30,6 +30,12 @@ const ConnectButton = dynamicImport(
 
 type Step = 'loading' | 'needs-connect' | 'needs-verify' | 'verifying' | 'ready' | 'claiming' | 'done' | 'error'
 
+// States that the gift-load effect is allowed to enter from. Anything
+// else (e.g. `ready` set by the sessionStorage effect after a callback
+// redirect, or `claiming` while a tx is in flight) should not be
+// clobbered when fetchGiftById resolves.
+const LOAD_TRANSITION_ALLOWED: Step[] = ['loading', 'needs-connect', 'needs-verify']
+
 export default function ClaimPage() {
   const params = useParams<{ giftId: string }>()
   const giftId = params?.giftId || ''
@@ -45,33 +51,9 @@ export default function ClaimPage() {
   const [verifiedAs, setVerifiedAs] = useState<string | null>(null)
   const [claimDigest, setClaimDigest] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!giftId) return
-    fetchGiftById(suiClient, giftId).then(g => {
-      if (!g) { setError('Gift not found — link may be wrong or it expired'); setStep('error'); return }
-      setGift(g)
-      if (g.claimed) { setError('This gift has already been claimed'); setStep('error'); return }
-      if (g.isExpired) { setError('This gift has expired and refunded to the sender'); setStep('error'); return }
-      setStep(account?.address ? 'needs-verify' : 'needs-connect')
-    }).catch(e => { setError(e?.message || 'Failed to load gift'); setStep('error') })
-  }, [giftId, suiClient, account?.address])
-
-  // Resolve the token's real decimals + symbol from on-chain CoinMetadata.
-  // Falls back safely; claim works either way because the tx uses the raw
-  // tokenType as a generic argument, not the display metadata.
-  useEffect(() => {
-    if (!gift?.tokenType) return
-    let cancelled = false
-    resolveCoinMeta(suiClient, gift.tokenType).then(m => {
-      if (!cancelled) setTokenMeta(m)
-    })
-    return () => { cancelled = true }
-  }, [gift?.tokenType, suiClient])
-
-  useEffect(() => {
-    if (step === 'needs-connect' && account?.address) setStep('needs-verify')
-  }, [account?.address, step])
-
+  // Pick up a verifyToken stashed by the /airdrops/callback page. Run
+  // this FIRST so a subsequent fetchGiftById resolution can't clobber
+  // an already-advanced `ready` state.
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!giftId) return
@@ -88,6 +70,36 @@ export default function ClaimPage() {
       setStep('ready')
     } catch { /* ignore — user will re-verify */ }
   }, [giftId])
+
+  // Load gift metadata. Only advance to needs-connect/needs-verify if
+  // we're still in an early pre-verify state — the sessionStorage effect
+  // above may have already promoted us to `ready`.
+  useEffect(() => {
+    if (!giftId) return
+    fetchGiftById(suiClient, giftId).then(g => {
+      if (!g) { setError('Gift not found — link may be wrong or it expired'); setStep('error'); return }
+      setGift(g)
+      if (g.claimed) { setError('This gift has already been claimed'); setStep('error'); return }
+      if (g.isExpired) { setError('This gift has expired and refunded to the sender'); setStep('error'); return }
+      setStep(prev => {
+        if (!LOAD_TRANSITION_ALLOWED.includes(prev)) return prev
+        return account?.address ? 'needs-verify' : 'needs-connect'
+      })
+    }).catch(e => { setError(e?.message || 'Failed to load gift'); setStep('error') })
+  }, [giftId, suiClient, account?.address])
+
+  useEffect(() => {
+    if (!gift?.tokenType) return
+    let cancelled = false
+    resolveCoinMeta(suiClient, gift.tokenType).then(m => {
+      if (!cancelled) setTokenMeta(m)
+    })
+    return () => { cancelled = true }
+  }, [gift?.tokenType, suiClient])
+
+  useEffect(() => {
+    if (step === 'needs-connect' && account?.address) setStep('needs-verify')
+  }, [account?.address, step])
 
   async function startVerify() {
     if (!gift || !account?.address) return
@@ -145,7 +157,6 @@ export default function ClaimPage() {
       }
       setClaimDigest(result.digest)
       setStep('done')
-      // Any open /staking tab should refresh its feed immediately.
       emitCultureRefresh()
     } catch (e: any) {
       setError(e?.message || 'Claim failed')
