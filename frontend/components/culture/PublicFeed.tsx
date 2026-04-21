@@ -30,7 +30,18 @@ function formatDate(ts: number): string {
 function RecipientCell({ handle }: { handle: string }) {
   const kind = detectRecipientKind(handle)
   if (kind === 'sui') return <span className="text-cyan-300 truncate">{handle}</span>
-  return <span className="text-gray-200 truncate">@{normaliseXHandle(handle)}</span>
+  const x = normaliseXHandle(handle)
+  return (
+    <a
+      href={`https://x.com/${x}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={e => e.stopPropagation()}
+      className="text-gray-200 truncate hover:text-white hover:underline"
+    >
+      @{x}
+    </a>
+  )
 }
 
 function StatusCell({ gift }: { gift: GiftEvent }) {
