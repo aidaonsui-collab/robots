@@ -585,7 +585,7 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
   const quoteCoinType = pairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
 
   // Fetch real pair-token (SUI or AIDA) balance
-  const { data: balanceData } = useSuiClientQuery(
+  const { data: balanceData, refetch: refetchBalance } = useSuiClientQuery(
     'getBalance',
     { owner: address ?? '', coinType: quoteCoinType },
     { enabled: !!address }
@@ -595,7 +595,7 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
     : 0
 
   // Fetch token coins for sell
-  const { data: tokenCoinsData } = useSuiClientQuery(
+  const { data: tokenCoinsData, refetch: refetchTokenCoins } = useSuiClientQuery(
     'getCoins',
     { owner: address ?? '', coinType: poolData?.coinType ?? '' },
     { enabled: !!address && !!poolData?.coinType }
@@ -797,6 +797,12 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
             if (status?.status === 'success') {
               setTxSuccess(`Done! Digest: ${result.digest.slice(0, 10)}...`)
               setAmount('')
+              // Refresh the wallet balance + token holdings so "Max" and the
+              // receive estimator update immediately. Sui's fullnode is fast
+              // enough that a single refetch right after the tx lands picks
+              // up the new balances.
+              refetchBalance()
+              refetchTokenCoins()
               setTimeout(() => onTradeSuccess?.(), 3000)
               return
             }
