@@ -29,27 +29,27 @@ function formatDate(ts: number): string {
 
 function RecipientCell({ handle }: { handle: string }) {
   const kind = detectRecipientKind(handle)
-  if (kind === 'sui') return <span className="text-cyan-300">{handle}</span>
-  return <span className="text-gray-200">@{normaliseXHandle(handle)}</span>
+  if (kind === 'sui') return <span className="text-cyan-300 truncate">{handle}</span>
+  return <span className="text-gray-200 truncate">@{normaliseXHandle(handle)}</span>
 }
 
 function StatusCell({ gift }: { gift: GiftEvent }) {
   if (gift.claimed) {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">
+      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 whitespace-nowrap">
         <Check className="w-3 h-3" /> Claimed
       </span>
     )
   }
   if (gift.isExpired) {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">
+      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 whitespace-nowrap">
         <AlertCircle className="w-3 h-3" /> Expired
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#D4AF37]/15 text-[#D4AF37]">
+    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-[#D4AF37]/15 text-[#D4AF37] whitespace-nowrap">
       <Clock className="w-3 h-3" /> {timeUntil(gift.expiresAt)}
     </span>
   )
@@ -85,14 +85,14 @@ export default function PublicFeed() {
 
   return (
     <div className="bg-[#0d0f1a]/60 border border-white/[0.06] rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between gap-3 p-5 pb-3">
-        <div>
+      <div className="flex items-center justify-between gap-3 p-4 pb-3">
+        <div className="min-w-0">
           <h3 className="text-white font-semibold text-sm">Recent Airdrops</h3>
           <p className="text-[11px] text-gray-600 mt-0.5">
             {loading ? 'Loading…' : `${totalSent} sent · ${totalClaimed} claimed`}
           </p>
         </div>
-        <div className="flex items-center gap-1 p-0.5 bg-[#07070e] border border-white/[0.06] rounded-lg">
+        <div className="flex items-center gap-1 p-0.5 bg-[#07070e] border border-white/[0.06] rounded-lg shrink-0">
           {(['all', 'pending', 'claimed'] as const).map(f => (
             <button
               key={f}
@@ -107,15 +107,25 @@ export default function PublicFeed() {
         </div>
       </div>
 
+      {/* Desktop table — column widths explicitly assigned so the right-hand
+          columns don't get pushed out of view when the recipient cell
+          stretches. Amount + status stay in a readable gutter. */}
       <div className="hidden sm:block overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col className="w-[34%]" />
+            <col className="w-[22%]" />
+            <col className="w-[16%]" />
+            <col className="w-[18%]" />
+            <col className="w-[10%]" />
+          </colgroup>
           <thead>
             <tr className="text-[10px] text-gray-500 uppercase tracking-wider border-y border-white/[0.04]">
-              <th className="text-left font-medium px-5 py-2.5">Recipient</th>
-              <th className="text-right font-medium px-5 py-2.5">Amount</th>
-              <th className="text-left font-medium px-5 py-2.5">Date</th>
-              <th className="text-left font-medium px-5 py-2.5">Status</th>
-              <th className="text-right font-medium px-5 py-2.5"></th>
+              <th className="text-left font-medium px-3 py-2.5">Recipient</th>
+              <th className="text-right font-medium px-3 py-2.5">Amount</th>
+              <th className="text-left font-medium px-3 py-2.5">Date</th>
+              <th className="text-left font-medium px-3 py-2.5">Status</th>
+              <th className="text-right font-medium px-3 py-2.5"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.03]">
@@ -127,14 +137,14 @@ export default function PublicFeed() {
               const { decimals, label } = resolveMeta(g)
               return (
                 <tr key={g.giftId} className="hover:bg-white/[0.02] transition-colors">
-                  <td className="px-5 py-3"><RecipientCell handle={g.recipientHandle} /></td>
-                  <td className="px-5 py-3 text-right tabular-nums">
+                  <td className="px-3 py-2.5 truncate"><RecipientCell handle={g.recipientHandle} /></td>
+                  <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                     <span className="text-white font-semibold">{formatAmount(g.amount, decimals)}</span>
                     <span className="text-gray-500 text-xs ml-1">{label}</span>
                   </td>
-                  <td className="px-5 py-3 text-gray-500 text-xs">{formatDate(g.timestampMs)}</td>
-                  <td className="px-5 py-3"><StatusCell gift={g} /></td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap">{formatDate(g.timestampMs)}</td>
+                  <td className="px-3 py-2.5"><StatusCell gift={g} /></td>
+                  <td className="px-3 py-2.5 text-right">
                     {!g.claimed && !g.isExpired ? (
                       <Link href={`/airdrops/claim/${g.giftId}`} className="text-[11px] text-[#D4AF37] hover:underline inline-flex items-center gap-0.5">
                         link <ExternalLink className="w-3 h-3" />
@@ -159,13 +169,13 @@ export default function PublicFeed() {
           const { decimals, label } = resolveMeta(g)
           return (
             <div key={g.giftId} className="px-4 py-3">
-              <div className="flex items-center justify-between mb-1">
-                <RecipientCell handle={g.recipientHandle} />
-                <span className="text-white font-semibold text-sm tabular-nums">
+              <div className="flex items-center justify-between mb-1 gap-2">
+                <span className="min-w-0 truncate"><RecipientCell handle={g.recipientHandle} /></span>
+                <span className="text-white font-semibold text-sm tabular-nums whitespace-nowrap">
                   {formatAmount(g.amount, decimals)} <span className="text-gray-500 text-xs">{label}</span>
                 </span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] text-gray-500">{formatDate(g.timestampMs)}</span>
                 <div className="flex items-center gap-2">
                   <StatusCell gift={g} />
