@@ -19,12 +19,14 @@ export const CULTURE_ORIG_PKG   = '0xc8a3c68f5703bcd41021abe2537d084a7f4f984e9db
 export const CULTURE_LATEST_PKG = '0x1cfef124e33d31ed662ab74c15654fdcc95a410a84faaac301706ed63a1efafe'
 
 // Shared PlatformConfig object — created at init() and needed as an arg on
-// every deposit / claim. Must be set before the Culture tab works. Find it
-// once on-chain via: sui client events --json --query
-//   MoveEventType="<ORIG_PKG>::culture_fund::HandleVerified"
-// (empty fallback so the UI can render a clear "not configured" state)
+// every deposit / claim. Located via the publish tx's objectChanges:
+//   publish tx: D6aM4SPwDrmLQLZdyKjfeUZ6F71np3nsxisqyniahWpD
+//   Admin / fee-wallet: 0x2957f0f1…67409 (same deployer as the moonbags stack)
+// Overridable via env var; default is the on-chain object so the tab works
+// out of the box on mainnet.
 export const CULTURE_CONFIG_ID = (
-  process.env.NEXT_PUBLIC_CULTURE_CONFIG_ID || ''
+  process.env.NEXT_PUBLIC_CULTURE_CONFIG_ID
+  || '0x81983380c48232e50cbbe115217635adbbc6278cb555e0a79488b11ec15cda0a'
 ).trim()
 
 export const SUI_CLOCK   = '0x0000000000000000000000000000000000000000000000000000000000000006'
