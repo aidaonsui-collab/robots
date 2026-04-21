@@ -10,6 +10,8 @@ import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_LEGACY, SUI_CLOCK, AIDA_CONTRA
 
 // Lazy-load SuiLock component
 const SuiLockPage = lazy(() => import('../suilock/page'))
+// Lazy-load Culture (airdrops) tab — only mounted when the user clicks Culture
+const CultureTab = lazy(() => import('@/components/culture/CultureTab'))
 
 const SUI_RPC = 'https://fullnode.mainnet.sui.io'
 
@@ -47,7 +49,7 @@ export default function StakingPage() {
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction()
 
   // Page tab
-  const [pageTab, setPageTab] = useState<'staking' | 'suilock'>('staking')
+  const [pageTab, setPageTab] = useState<'staking' | 'suilock' | 'culture'>('staking')
 
   // UI state
   const [loading, setLoading]           = useState(false)
@@ -639,7 +641,29 @@ export default function StakingPage() {
             <Lock className="w-4 h-4" />
             SuiLock
           </button>
+          <button
+            onClick={() => setPageTab('culture')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all ${
+              pageTab === 'culture'
+                ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30'
+                : 'bg-white/5 text-gray-400 border border-white/5 hover:bg-white/10'
+            }`}
+          >
+            <Gift className="w-4 h-4" />
+            Culture
+          </button>
         </div>
+
+        {/* Culture Tab — send airdrops by X handle */}
+        {pageTab === 'culture' && (
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 text-[#D4AF37] animate-spin" />
+            </div>
+          }>
+            <CultureTab />
+          </Suspense>
+        )}
 
         {/* SuiLock Tab */}
         {pageTab === 'suilock' && (
