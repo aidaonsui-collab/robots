@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit'
 import { ExternalLink, Clock, Check, AlertCircle } from 'lucide-react'
 import {
@@ -10,6 +10,7 @@ import {
   formatAmount,
   GiftEvent,
 } from '@/lib/culture'
+import { useCultureRefresh } from '@/lib/cultureBus'
 import { useGiftTokenMeta } from './useGiftTokenMeta'
 
 type Filter = 'sent' | 'received'
@@ -21,7 +22,7 @@ export default function GiftsDashboard() {
   const [gifts, setGifts] = useState<GiftEvent[]>([])
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     if (!account?.address) return
     setLoading(true)
     fetchAllGifts(suiClient)
@@ -30,12 +31,15 @@ export default function GiftsDashboard() {
       .finally(() => setLoading(false))
   }, [account?.address, suiClient])
 
+  useEffect(() => { reload() }, [reload])
+  useCultureRefresh(reload)
+
   const resolveMeta = useGiftTokenMeta(gifts)
 
   const mine = gifts.filter(g =>
     filter === 'sent'
       ? g.depositor.toLowerCase() === account?.address?.toLowerCase()
-      : false // "received" requires an X handle to match against — user doesn't have one bound here; that view lives on the claim page for now
+      : false
   )
 
   if (!account?.address) {
