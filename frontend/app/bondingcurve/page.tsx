@@ -343,12 +343,12 @@ export default function BondingCurvePage() {
               <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-20 group-hover:opacity-50 transition-opacity duration-700 pointer-events-none blur-2xl" style={{ background: 'radial-gradient(circle, #ec4899 0%, transparent 70%)' }} />
               <div className="relative z-10">
                 <p className="text-[11px] text-gray-500 font-semibold tracking-[0.14em] uppercase mb-3">Fees Distributed</p>
+                {/* SUI + AIDA lines are rendered with identical classes so
+                    the two currencies read as equally-weighted siblings
+                    — same size, color, weight, and pink-glow background. */}
                 <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-1 value-rise glow-pink" style={{ fontVariantNumeric: 'tabular-nums' }}>{feesDistributed}</p>
                 {feesDistributedAida && (
-                  <p className="text-sm sm:text-base font-semibold text-[#D4AF37] tracking-tight mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    + {feesDistributedAida}
-                    <span className="text-[10px] text-gray-500 font-normal ml-1.5">from AIDA pairs</span>
-                  </p>
+                  <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2 value-rise glow-pink" style={{ fontVariantNumeric: 'tabular-nums' }}>{feesDistributedAida}</p>
                 )}
                 <div className="flex items-center gap-2 mt-2">
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ Fees</span>
