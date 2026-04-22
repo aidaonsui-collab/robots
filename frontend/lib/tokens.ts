@@ -132,7 +132,7 @@ const V12_PACKAGE_PREV    = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d
 
 // AIDA-paired fork. Same two-publish story as V12.
 const AIDA_PACKAGE        = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
-const AIDA_PACKAGE_CURRENT = '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f'
+const AIDA_PACKAGE_CURRENT = '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313'
 
 // Packages to fan out event queries across (legacy chain + v11 + both v12
 // publishes + both AIDA-fork publishes).

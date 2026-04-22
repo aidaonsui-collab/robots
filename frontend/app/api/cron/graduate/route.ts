@@ -10,7 +10,7 @@ const RPC = 'https://fullnode.mainnet.sui.io'
 // remain on the previous one.
 const AIDA_PACKAGES = [
   '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8', // 2026-04-18 publish
-  '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f', // 2026-04-21 republish (admin-settable fee)
+  '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // 2026-04-21 republish (admin-settable fee)
 ]
 const TOKEN_DECIMALS = 6
 const PROCESSED_KEY = 'graduation:processed'

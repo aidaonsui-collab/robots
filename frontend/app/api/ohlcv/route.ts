@@ -10,7 +10,7 @@ const EVENT_PACKAGES = [
   '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e', // v12 (2026-04-16 publish)
   '0x2ab8f764b67991acaf37966af2274dcf7214ae0e8cea3ede214078f248dce3d2', // v12 republish (2026-04-21, admin-settable fee)
   '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8', // AIDA fork (2026-04-18 publish)
-  '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f', // AIDA fork republish (2026-04-21, admin-settable fee)
+  '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // AIDA fork republish (2026-04-21, admin-settable fee)
 ]
 
 // How long to serve cached candles before re-fetching (seconds)

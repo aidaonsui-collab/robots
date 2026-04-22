@@ -8,7 +8,7 @@ import { useSearchParams } from 'next/navigation'
 import { useCurrentWallet, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Coins, Gift, Loader2, Wallet, AlertTriangle, ArrowRight, TrendingUp, ExternalLink, Lock } from 'lucide-react'
 import { Transaction } from '@mysten/sui/transactions'
-import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_LEGACY, SUI_CLOCK, AIDA_CONTRACT } from '@/lib/contracts'
+import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V12_PREV, MOONBAGS_CONTRACT_LEGACY, SUI_CLOCK, AIDA_CONTRACT } from '@/lib/contracts'
 import { MOONBAGS_AIDA_CONTRACT } from '@/lib/contracts_aida'
 
 // Lazy-load SuiLock component
@@ -19,13 +19,16 @@ const CultureTab = lazy(() => import('@/components/culture/CultureTab'))
 const SUI_RPC = 'https://fullnode.mainnet.sui.io'
 
 // ─── Contract constants ───────────────────────────────────────────────────────
-// AIDA staking positions live in the V12 stakeConfig (0x59c35bc...). V12 *package*
-// unstake aborts with code 4 (new restriction), so use V11 for all stake/unstake/
-// claim calls on the shared stakeConfig — it's the last working package version.
+// Existing AIDA stakers live on the V12 PREVIOUS publish's stakeConfig
+// (0x59c35bc…). V11 is used as the call target because the V12 *package*
+// unstake aborts with code 4, and both V11 and V12_PREV share the same
+// shared objects. Post-republish V12 has a fresh, empty stakeConfig; that
+// surface is exposed as a secondary claim card below when it accumulates
+// rewards from new-v12 pool trades.
 const V11_PKG      = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
 const PKG          = V11_PKG
-const STAKE_CFG    = MOONBAGS_CONTRACT_V12.stakeConfig    // 0x59c35bc... — AIDA pool lives here
-const MBAGS_CFG    = MOONBAGS_CONTRACT_V12.configuration
+const STAKE_CFG    = MOONBAGS_CONTRACT_V12_PREV.stakeConfig    // 0x59c35bc…
+const MBAGS_CFG    = MOONBAGS_CONTRACT_V12_PREV.configuration
 
 // Legacy v1 AIDA staking (original super-legacy — still migrates to current PKG)
 const LEGACY_PKG        = '0x50e60400cc2ea760b5fb8380fa3f1fc0a94dfc592ec78487313d21b50af846da'

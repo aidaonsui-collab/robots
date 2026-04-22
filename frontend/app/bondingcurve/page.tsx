@@ -121,7 +121,7 @@ export default function BondingCurvePage() {
     // must be summed separately so the Fees Distributed card can display
     // the two currencies on their own lines.
     const AIDA_PAIR_PKG         = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8' // 2026-04-18
-    const AIDA_PAIR_CURRENT_PKG = '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f' // 2026-04-21 republish
+    const AIDA_PAIR_CURRENT_PKG = '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313' // 2026-04-21 republish
     Promise.all([
       fetchTradeEvents(LEGACY_ORIGIN_PKG),
       fetchTradeEvents(V11_PKG),

@@ -13,7 +13,7 @@ const ORIGIN_PACKAGE_V11         = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0
 const ORIGIN_PACKAGE_V12         = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e' // 2026-04-16 publish
 const ORIGIN_PACKAGE_V12_CURRENT = '0x2ab8f764b67991acaf37966af2274dcf7214ae0e8cea3ede214078f248dce3d2' // 2026-04-21 republish (admin-settable fee)
 const ORIGIN_PACKAGE_AIDA        = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8' // 2026-04-18 publish
-const ORIGIN_PACKAGE_AIDA_CURRENT = '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f' // 2026-04-21 republish (admin-settable fee)
+const ORIGIN_PACKAGE_AIDA_CURRENT = '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313' // 2026-04-21 republish (admin-settable fee)
 
 // Token supply used as fallback once a bonding curve graduates — the contract
 // zeroes out remain_token_reserves on transfer_pool, so we can't read it from

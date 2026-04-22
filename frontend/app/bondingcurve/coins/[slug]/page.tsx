@@ -287,14 +287,21 @@ function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, mo
 
   const isCreator = !!connectedAddress && connectedAddress.toLowerCase() === token.creator.toLowerCase()
 
-  // Route per-pool: legacy pools use the v7 chain, v11 pools use the new package.
-  // Pool's package segment is carried through from the Pool object type.
+  // Route per-pool: each package era has its own shared objects.
+  // `getMoonbagsContractForPackage()` already maps V11 + previous V12
+  // pools to MOONBAGS_CONTRACT_V12_PREV (which owns the shared
+  // Configuration/stakeConfig/lockConfig both publishes use), the current
+  // V12 pool to MOONBAGS_CONTRACT_V12, AIDA pairs to the AIDA bundle, and
+  // anything else on the legacy chain to MOONBAGS_CONTRACT_LEGACY.
+  //
+  // V11 is the one wrinkle: it's a fresh publish that still emits module
+  // entries under its OWN package id, even though its shared objects
+  // belong to V12_PREV. So for V11 pools we point module calls at
+  // V11_PKG_ID while reading shared objects from the routed bundle.
   const mbagsContract = getMoonbagsContractForPackage(moonbagsPackageId)
-  // v11 pools share config objects with v12 (confirmed via stakeConfig ID match).
-  // getMoonbagsContractForPackage returns LEGACY for v11 IDs, so override manually.
   const isV11Pool = moonbagsPackageId === V11_PKG_ID
-  const claimStakeConfig = isV11Pool ? MOONBAGS_CONTRACT_V12.stakeConfig : mbagsContract.stakeConfig
-  const claimConfiguration = isV11Pool ? MOONBAGS_CONTRACT_V12.configuration : mbagsContract.configuration
+  const claimStakeConfig = mbagsContract.stakeConfig
+  const claimConfiguration = mbagsContract.configuration
   const claimPackageId = isV11Pool ? V11_PKG_ID : mbagsContract.packageId
 
   // Fetch accumulated creator pool balance
@@ -636,18 +643,21 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
   const fee = parseFloat(amount || '0') * 0.01
   const quickAmounts = mode === 'buy' ? [1, 5, 10, 25] : [25, 50, 75, 100]
 
-  // Route per-pool: the pool's package segment tells us whether to use the
-  // legacy v7 chain (which still accepts calls to upgraded variants) or
-  // the fresh v11 publish. v11 stripped Cetus/Turbos/lp_burn deps, so the
-  // `buy_exact_in_with_lock` arg list is shorter there.
+  // Route per-pool: the pool's package segment tells us which bundle's
+  // shared objects to use. The legacy v7 chain uses a 10-arg Cetus-aware
+  // buy entry; V11, both V12 publishes, and AIDA-pair all stripped those
+  // deps and use the 6-arg `buy_exact_in_with_lock`.
   const mbagsContract = getMoonbagsContractForPackage(poolData?.moonbagsPackageId)
-  // Identify pool generation by raw package ID (v11 is in MOONBAGS_LEGACY_PACKAGE_IDS
-  // so getMoonbagsContractForPackage returns LEGACY for it, but its buy signature differs).
+  // V11 pools still call the V11 module directly even though their shared
+  // objects live on MOONBAGS_CONTRACT_V12_PREV, so we keep a flag for
+  // selecting the right package id as the move-call target below.
   const poolPkgId = poolData?.moonbagsPackageId ?? ''
   const isV11Pool = poolPkgId === V11_PKG_ID
-  const isV12Pool = poolPkgId === MOONBAGS_CONTRACT_V12.packageId
-  // Both v11 and v12 use the 6-arg stripped buy (no Cetus/Turbos deps).
-  const isStrippedBuy = isV11Pool || isV12Pool || pairType === 'AIDA'
+  // `isStrippedBuy` captures every V11+ publish (both V12 eras, AIDA-pair
+  // — all use the 6-arg `buy_exact_in_with_lock`) vs. the legacy v7 chain
+  // which uses the 10-arg Cetus-aware variant. Computing this from the
+  // routed bundle is cheaper than maintaining a list of known pkgIds.
+  const isStrippedBuy = mbagsContract !== MOONBAGS_CONTRACT_LEGACY
 
   const handleTrade = async () => {
     if (!poolData || !address || !amount || parseFloat(amount) <= 0) return
@@ -688,7 +698,7 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
       if (isStrippedBuy) {
         // v11 and v12: stripped Cetus/Turbos deps, 6-arg buy_exact_in_with_lock.
         // v11 is a fresh publish like v12 — both share the same configuration/lockConfig objects.
-        // (Confirmed: STAKE_CFG_V11 == MOONBAGS_CONTRACT_V12.stakeConfig)
+        // (V11 + V12-prev share MOONBAGS_CONTRACT_V12_PREV's stakeConfig)
         const buyPkg = isV11Pool ? V11_PKG_ID : mbagsContract.packageId
         const buyCfg = mbagsContract.configuration
         const buyLock = mbagsContract.lockConfig
