@@ -57,11 +57,11 @@ export const MOONBAGS_LEGACY_PACKAGE_IDS: readonly string[] = [
 // Published: 2026-04-16  TX: J9sdFjppB8881Eo7eZXU9s9xrUeG9Y4LU7LiZBS7bWTg
 // Admin caps live on deployer `0x2957f0...`.
 export const MOONBAGS_CONTRACT_V12: MoonbagsContract = {
-  packageId:     '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e',
+  packageId:     '0x2ab8f764b67991acaf37966af2274dcf7214ae0e8cea3ede214078f248dce3d2',
   module:        'moonbags',
-  configuration: '0x74b01e1bf199031609d06a3b9669fffd0c77a17b57ece97595e86b0af000a5ea', // moonbags::Configuration
-  stakeConfig:   '0x59c35bc4c50631e4d4468d9964ba23c3961e1ff8d7c6df740fcf776c8936e940', // moonbags_stake::Configuration
-  lockConfig:    '0xd3c8ab1092e85101adbdb98b5717b9911dfbc90a41dbf896cada9a25c065a5e3', // moonbags_token_lock::Configuration
+  configuration: '0x02ecd894da466f2473b9bc01f8ce071ef613ad605bb3905e5c3cde5efe539b76', // moonbags::Configuration
+  stakeConfig:   '0x0933664b5e86ed288c9f4bf2e6996e3be10571852b4aa5ed334c746d9348b611', // moonbags_stake::Configuration
+  lockConfig:    '0xe5e8b3f8fd31556ae856ef05aee794d9792f6a1e766cabc1d25e067dd351b645', // moonbags_token_lock::Configuration
   tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
 }
 
