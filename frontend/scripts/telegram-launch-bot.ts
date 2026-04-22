@@ -28,11 +28,25 @@ const STAKING_POLL_MS = 15_000 // 15s — staking events
 const PRICE_CACHE_TTL = 5 * 60 * 1000 // 5 min
 
 // On-chain package IDs (events are keyed by origin package)
-const PKG_LEGACY = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
-const PKG_V11 = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
-const PKG_V12 = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e'
+const PKG_LEGACY      = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
+const PKG_V11         = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
+const PKG_V12         = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e' // 2026-04-16 publish
+const PKG_V12_CURRENT = '0x3abe9c33c8ba9420f5f7388f50c133fef580c70bd1da54cf88e1ec6e8f2e2a60' // 2026-04-21 republish (admin-settable fee)
 // AIDA-paired bonding curve (origin) — emits its own moonbags::* and moonbags_stake::* events
-const PKG_AIDA = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
+const PKG_AIDA         = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8' // 2026-04-18 publish
+const PKG_AIDA_CURRENT = '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313' // 2026-04-21 republish (admin-settable fee)
+
+// Every moonbags origin the bot should fan events out across. Keep both
+// publishes of each era live — pre-republish pools keep emitting under
+// their original package.
+const MOONBAGS_PACKAGES = [
+  PKG_LEGACY,
+  PKG_V11,
+  PKG_V12,
+  PKG_V12_CURRENT,
+  PKG_AIDA,
+  PKG_AIDA_CURRENT,
+] as const
 
 // Olympus presale package (v8 — 32-field struct)
 const PKG_PRESALE = '0x4c9f2fe6a524873adea66ff6f31d6caba0df10d10ffd8b28e99d0b8e26eabc76'
@@ -633,15 +647,20 @@ async function pollStaking(): Promise<void> {
   if (isPollingStaking) return
   isPollingStaking = true
   try {
-    const [stakeLegacy, stakeV11, stakeV12, stakeAida] = await Promise.all([
-      queryEvents(`${PKG_LEGACY}::moonbags_stake::StakeEvent`, 20),
-      queryEvents(`${PKG_V11}::moonbags_stake::StakeEvent`, 20),
-      queryEvents(`${PKG_V12}::moonbags_stake::StakeEvent`, 20),
-      queryEvents(`${PKG_AIDA}::moonbags_stake::StakeEvent`, 20),
-    ])
+    // Fan out across every known moonbags publish so stake events from
+    // any era are picked up.
+    const stakeBatches = await Promise.all(
+      MOONBAGS_PACKAGES.map(pkg =>
+        queryEvents(`${pkg}::moonbags_stake::StakeEvent`, 20)
+          .catch((e: any) => {
+            console.warn(`[staking] queryEvents failed for ${pkg}:`, e?.message || e)
+            return [] as any[]
+          })
+      )
+    )
 
     // Merge and aggressively deduplicate by txDigest BEFORE processing
-    const allRaw = [...stakeLegacy, ...stakeV11, ...stakeV12, ...stakeAida]
+    const allRaw = stakeBatches.flat()
     const txDigestSeen = new Set<string>()
     const allStakes: any[] = []
     for (const event of allRaw) {
@@ -653,7 +672,8 @@ async function pollStaking(): Promise<void> {
       allStakes.push(event)
     }
 
-    console.log(`[staking] legacy=${stakeLegacy.length}, v11=${stakeV11.length}, v12=${stakeV12.length}, after dedup=${allStakes.length}`)
+    const counts = MOONBAGS_PACKAGES.map((p, i) => `${p.slice(0, 10)}…=${stakeBatches[i].length}`).join(', ')
+    console.log(`[staking] ${counts}, after dedup=${allStakes.length}`)
 
     if (isFirstStakePoll) {
       for (const e of allStakes) {
