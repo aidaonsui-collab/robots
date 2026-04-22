@@ -906,11 +906,6 @@ function StakingPageInner() {
               <p className="text-2xl font-bold text-green-400 tabular-nums">
                 {liveRewards.toFixed(6)} <span className="text-sm text-muted-foreground">SUI</span>
               </p>
-              {aidaPairRewards > 0 && (
-                <p className="text-sm font-semibold text-[#D4AF37] tabular-nums mt-0.5">
-                  + {aidaPairRewards.toFixed(6)} <span className="text-xs text-muted-foreground font-normal">AIDA</span>
-                </p>
-              )}
               {v3Staked > 0 && poolRwdIdx > stakerRwdIdx && (
                 <p className="text-xs text-green-500/70 flex items-center gap-1 mt-1">
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -922,20 +917,38 @@ function StakingPageInner() {
                   ✅ {(Number(stakerEarned) / 1e9).toFixed(6)} SUI claimable now
                 </p>
               )}
-              {aidaPairEarned > 0n && (
-                <p className="text-xs text-[#D4AF37] mt-1 font-semibold">
-                  ✅ {(Number(aidaPairEarned) / 1e9).toFixed(6)} AIDA claimable now
-                </p>
-              )}
               {stakerEarned === 0n && liveRewards > 0 && (
                 <p className="text-xs text-yellow-500/70 mt-1">
                   ⚡ Go to token page → Info → Distribute to unlock rewards
                 </p>
               )}
             </div>
+            {/* Dedicated AIDA-pair pending-rewards card, equal-weight sibling
+                to the SUI one above. Always rendered so stakers can see
+                AIDA-pair fees are a real revenue stream even before AIDA
+                pairs launch — just shows 0 until fees start accruing. */}
             <div className="bg-background/50 rounded-xl p-4">
-              <div className="text-sm text-muted-foreground mb-1">Fee Share</div>
-              <p className="text-2xl font-bold text-[#D4AF37]">30%</p>
+              <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                <Gift className="w-4 h-4 text-[#D4AF37]" />
+                <span className="text-sm">Pending Rewards</span>
+              </div>
+              <p className="text-2xl font-bold text-[#D4AF37] tabular-nums">
+                {aidaPairRewards.toFixed(6)} <span className="text-sm text-muted-foreground">AIDA</span>
+              </p>
+              {v3Staked > 0 && aidaPairPoolIdx > aidaPairStakerIdx && (
+                <p className="text-xs text-[#D4AF37]/70 flex items-center gap-1 mt-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#D4AF37] animate-pulse" />
+                  accumulating live
+                </p>
+              )}
+              {aidaPairEarned > 0n && (
+                <p className="text-xs text-[#D4AF37] mt-1 font-semibold">
+                  ✅ {(Number(aidaPairEarned) / 1e9).toFixed(6)} AIDA claimable now
+                </p>
+              )}
+              {aidaPairEarned === 0n && aidaPairRewards === 0 && (
+                <p className="text-[10px] text-gray-500 mt-1">From AIDA-paired token fees</p>
+              )}
             </div>
           </div>
 

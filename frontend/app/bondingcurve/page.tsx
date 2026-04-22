@@ -43,6 +43,10 @@ export default function BondingCurvePage() {
   const [aidaStakedUsd, setAidaStakedUsd] = useState<string>('—')
   const [aidaStakedDollar, setAidaStakedDollar] = useState<string>('')
   const [feesDistributed, setFeesDistributed] = useState<string>('—')
+  // AIDA-pair trading fees accrue in AIDA, not SUI — kept in a separate
+  // state so the stat card can render them on their own line rather than
+  // incorrectly aggregated into the SUI total.
+  const [feesDistributedAida, setFeesDistributedAida] = useState<string>('')
   const sortRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -111,13 +115,25 @@ export default function BondingCurvePage() {
         })
       }).then(r => r.json()).then(res => res?.result?.data ?? [])
 
-    Promise.all([fetchTradeEvents(LEGACY_ORIGIN_PKG), fetchTradeEvents(V11_PKG), fetchTradeEvents(V12_PKG), fetchTradeEvents('0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8')])
-      .then(([legacyEvents, v11Events, v12Events]) => {
-        const allEvents = [...legacyEvents, ...v11Events, ...v12Events]
-        const totalFeeMist = allEvents.reduce((sum: number, e: any) => sum + Number(e.parsedJson?.fee ?? 0), 0)
-        const totalFeeSui = totalFeeMist / 1e9
-        if (totalFeeSui >= 1000) setFeesDistributed(`${(totalFeeSui / 1000).toFixed(2)}K SUI`)
-        else setFeesDistributed(`${totalFeeSui.toFixed(4)} SUI`)
+    // AIDA-pair package — fees from these trades are in AIDA, not SUI, and
+    // must be summed separately so the Fees Distributed card can display
+    // the two currencies on their own lines.
+    const AIDA_PAIR_PKG = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
+    Promise.all([
+      fetchTradeEvents(LEGACY_ORIGIN_PKG),
+      fetchTradeEvents(V11_PKG),
+      fetchTradeEvents(V12_PKG),
+      fetchTradeEvents(AIDA_PAIR_PKG),
+    ]).then(([legacyEvents, v11Events, v12Events, aidaPairEvents]) => {
+        const suiEvents = [...legacyEvents, ...v11Events, ...v12Events]
+        const sumFee = (events: any[]) =>
+          events.reduce((s: number, e: any) => s + Number(e.parsedJson?.fee ?? 0), 0) / 1e9
+        const totalFeeSui  = sumFee(suiEvents)
+        const totalFeeAida = sumFee(aidaPairEvents)
+        const fmt = (n: number) =>
+          n >= 1000 ? `${(n / 1000).toFixed(2)}K` : n.toFixed(4)
+        setFeesDistributed(`${fmt(totalFeeSui)} SUI`)
+        setFeesDistributedAida(totalFeeAida > 0 ? `${fmt(totalFeeAida)} AIDA` : '')
       }).catch(() => {})
     // Dynamically resolve AIDA StakingPool from v11 stake config (same as staking page)
     const V11_STAKE_CFG = '0x59c35bc4c50631e4d4468d9964ba23c3961e1ff8d7c6df740fcf776c8936e940'
@@ -327,8 +343,14 @@ export default function BondingCurvePage() {
               <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-20 group-hover:opacity-50 transition-opacity duration-700 pointer-events-none blur-2xl" style={{ background: 'radial-gradient(circle, #ec4899 0%, transparent 70%)' }} />
               <div className="relative z-10">
                 <p className="text-[11px] text-gray-500 font-semibold tracking-[0.14em] uppercase mb-3">Fees Distributed</p>
-                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2 value-rise glow-pink" style={{ fontVariantNumeric: 'tabular-nums' }}>{feesDistributed}</p>
-                <div className="flex items-center gap-2">
+                <p className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-1 value-rise glow-pink" style={{ fontVariantNumeric: 'tabular-nums' }}>{feesDistributed}</p>
+                {feesDistributedAida && (
+                  <p className="text-sm sm:text-base font-semibold text-[#D4AF37] tracking-tight mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    + {feesDistributedAida}
+                    <span className="text-[10px] text-gray-500 font-normal ml-1.5">from AIDA pairs</span>
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-2">
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">▲ Fees</span>
                   <span className="text-[10px] text-gray-600">Cumulative</span>
                 </div>
