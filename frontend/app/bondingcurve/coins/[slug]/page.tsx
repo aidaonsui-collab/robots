@@ -1629,7 +1629,7 @@ export default function CoinPage() {
             { label: 'Mkt Cap', value: token.marketCap >= 1_000_000 ? `$${(token.marketCap / 1_000_000).toFixed(2)}M` : token.marketCap >= 1000 ? `$${(token.marketCap / 1000).toFixed(1)}K` : `$${token.marketCap.toFixed(0)}`, color: 'text-[#D4AF37]' },
             { label: 'Volume 24h', value: `${(token.volume24h / 1000).toFixed(1)}K ${pairType}`, color: 'text-blue-400' },
             { label: 'Holders', value: holderCount !== null ? holderCount.toLocaleString() : '—', color: 'text-cyan-400' },
-            { label: 'SUI Rewards', value: `${token.suiRewards} SUI`, color: 'text-green-400' },
+            { label: `${pairType} Rewards`, value: `${token.suiRewards} ${pairType}`, color: 'text-green-400' },
             { label: 'Bonding', value: `${token.progress}%`, color: 'text-pink-400' },
           ].map((s) => (
             <div key={s.label} className="flex items-center gap-2 bg-[#0f0f17] border border-gray-800/50 rounded-lg px-3 py-2">
