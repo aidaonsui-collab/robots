@@ -99,10 +99,12 @@ export default function BondingCurvePage() {
   useEffect(() => {
     const RPC = 'https://fullnode.mainnet.sui.io'
     const AIDA_POOL = '0x2b7c1b42426abdc1ece2cea3f564e32b7809cdcebc87d08fa56b440d9eb5c3d4'
-    // Query fees from legacy, v11, and v12 packages
+    // Query fees from legacy, v11, v12 (both publishes), and AIDA-fork
+    // (both publishes). Each publish era emits events under its own pkgId.
     const LEGACY_ORIGIN_PKG = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
-    const V11_PKG = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
-    const V12_PKG = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e'
+    const V11_PKG           = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
+    const V12_PKG           = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e' // 2026-04-16
+    const V12_CURRENT_PKG   = '0x2ab8f764b67991acaf37966af2274dcf7214ae0e8cea3ede214078f248dce3d2' // 2026-04-21 republish
 
     // Fetch total fees from TradedEventV2 events across all package versions
     const fetchTradeEvents = (pkg: string) =>
@@ -118,18 +120,22 @@ export default function BondingCurvePage() {
     // AIDA-pair package — fees from these trades are in AIDA, not SUI, and
     // must be summed separately so the Fees Distributed card can display
     // the two currencies on their own lines.
-    const AIDA_PAIR_PKG = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
+    const AIDA_PAIR_PKG         = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8' // 2026-04-18
+    const AIDA_PAIR_CURRENT_PKG = '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f' // 2026-04-21 republish
     Promise.all([
       fetchTradeEvents(LEGACY_ORIGIN_PKG),
       fetchTradeEvents(V11_PKG),
       fetchTradeEvents(V12_PKG),
+      fetchTradeEvents(V12_CURRENT_PKG),
       fetchTradeEvents(AIDA_PAIR_PKG),
-    ]).then(([legacyEvents, v11Events, v12Events, aidaPairEvents]) => {
-        const suiEvents = [...legacyEvents, ...v11Events, ...v12Events]
+      fetchTradeEvents(AIDA_PAIR_CURRENT_PKG),
+    ]).then(([legacyEvents, v11Events, v12Events, v12CurrentEvents, aidaPairEvents, aidaPairCurrentEvents]) => {
+        const suiEvents = [...legacyEvents, ...v11Events, ...v12Events, ...v12CurrentEvents]
+        const aidaEvents = [...aidaPairEvents, ...aidaPairCurrentEvents]
         const sumFee = (events: any[]) =>
           events.reduce((s: number, e: any) => s + Number(e.parsedJson?.fee ?? 0), 0) / 1e9
         const totalFeeSui  = sumFee(suiEvents)
-        const totalFeeAida = sumFee(aidaPairEvents)
+        const totalFeeAida = sumFee(aidaEvents)
         const fmt = (n: number) =>
           n >= 1000 ? `${(n / 1000).toFixed(2)}K` : n.toFixed(4)
         setFeesDistributed(`${fmt(totalFeeSui)} SUI`)

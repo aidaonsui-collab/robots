@@ -8,10 +8,12 @@ const RPC = 'https://fullnode.mainnet.sui.io'
 // one — so legacy v3-v10 tokens all emit `<legacy origin>::moonbags::CreatedEventV2`
 // while v11 (a fresh publish, not an upgrade) emits its own type. We have to
 // query all three to get the full token list.
-const ORIGIN_PACKAGE_LEGACY = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
-const ORIGIN_PACKAGE_V11    = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
-const ORIGIN_PACKAGE_V12    = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e'
-const ORIGIN_PACKAGE_AIDA   = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
+const ORIGIN_PACKAGE_LEGACY      = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
+const ORIGIN_PACKAGE_V11         = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
+const ORIGIN_PACKAGE_V12         = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e' // 2026-04-16 publish
+const ORIGIN_PACKAGE_V12_CURRENT = '0x2ab8f764b67991acaf37966af2274dcf7214ae0e8cea3ede214078f248dce3d2' // 2026-04-21 republish (admin-settable fee)
+const ORIGIN_PACKAGE_AIDA        = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8' // 2026-04-18 publish
+const ORIGIN_PACKAGE_AIDA_CURRENT = '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f' // 2026-04-21 republish (admin-settable fee)
 
 // Token supply used as fallback once a bonding curve graduates — the contract
 // zeroes out remain_token_reserves on transfer_pool, so we can't read it from
@@ -137,38 +139,49 @@ export async function GET() {
       fetchAidaPriceUsd(),
     ])
 
-    // Fetch CreatedEventV2 + TradedEventV2 from ALL package origins.
+    // Fetch CreatedEventV2 + TradedEventV2 from ALL package origins
+    // (legacy, v11, both v12 publishes, both AIDA-fork publishes).
     const [
       createdLegacy,
       createdV11,
       createdV12,
+      createdV12Current,
       createdAida,
+      createdAidaCurrent,
       tradesLegacy,
       tradesV11,
       tradesV12,
+      tradesV12Current,
       tradesAida,
+      tradesAidaCurrent,
     ] = await Promise.all([
-      queryEvents(`${ORIGIN_PACKAGE_LEGACY}::moonbags::CreatedEventV2`, 50, true),
-      queryEvents(`${ORIGIN_PACKAGE_V11}::moonbags::CreatedEventV2`,    50, true),
-      queryEvents(`${ORIGIN_PACKAGE_V12}::moonbags::CreatedEventV2`,    50, true),
-      queryEvents(`${ORIGIN_PACKAGE_AIDA}::moonbags::CreatedEventV2`,   50, true),
-      queryEvents(`${ORIGIN_PACKAGE_LEGACY}::moonbags::TradedEventV2`,  200, false),
-      queryEvents(`${ORIGIN_PACKAGE_V11}::moonbags::TradedEventV2`,     200, false),
-      queryEvents(`${ORIGIN_PACKAGE_V12}::moonbags::TradedEventV2`,     200, false),
-      queryEvents(`${ORIGIN_PACKAGE_AIDA}::moonbags::TradedEventV2`,    200, false),
+      queryEvents(`${ORIGIN_PACKAGE_LEGACY}::moonbags::CreatedEventV2`,       50, true),
+      queryEvents(`${ORIGIN_PACKAGE_V11}::moonbags::CreatedEventV2`,          50, true),
+      queryEvents(`${ORIGIN_PACKAGE_V12}::moonbags::CreatedEventV2`,          50, true),
+      queryEvents(`${ORIGIN_PACKAGE_V12_CURRENT}::moonbags::CreatedEventV2`,  50, true),
+      queryEvents(`${ORIGIN_PACKAGE_AIDA}::moonbags::CreatedEventV2`,         50, true),
+      queryEvents(`${ORIGIN_PACKAGE_AIDA_CURRENT}::moonbags::CreatedEventV2`, 50, true),
+      queryEvents(`${ORIGIN_PACKAGE_LEGACY}::moonbags::TradedEventV2`,        200, false),
+      queryEvents(`${ORIGIN_PACKAGE_V11}::moonbags::TradedEventV2`,           200, false),
+      queryEvents(`${ORIGIN_PACKAGE_V12}::moonbags::TradedEventV2`,           200, false),
+      queryEvents(`${ORIGIN_PACKAGE_V12_CURRENT}::moonbags::TradedEventV2`,   200, false),
+      queryEvents(`${ORIGIN_PACKAGE_AIDA}::moonbags::TradedEventV2`,          200, false),
+      queryEvents(`${ORIGIN_PACKAGE_AIDA_CURRENT}::moonbags::TradedEventV2`,  200, false),
     ])
 
-    // Merge + dedupe by pool_id, keep newest first.
-    // Order: v12, v11, legacy, aida (v12 takes priority for same pool_id)
+    // Merge + dedupe by pool_id. Newest publish takes priority over older
+    // ones for the same pool id (shouldn't happen in practice — a pool
+    // belongs to the package that emitted its CreatedEventV2 — but the
+    // dedupe guards against any bridging we might add later).
     const seen = new Set<string>()
     const events: any[] = []
-    for (const e of [...createdV12, ...createdV11, ...createdLegacy, ...createdAida]) {
+    for (const e of [...createdV12Current, ...createdV12, ...createdV11, ...createdLegacy, ...createdAidaCurrent, ...createdAida]) {
       const pid = e.parsedJson?.pool_id
       if (!pid || seen.has(pid)) continue
       seen.add(pid)
       events.push(e)
     }
-    const allTrades = [...tradesLegacy, ...tradesV11, ...tradesV12, ...tradesAida]
+    const allTrades = [...tradesLegacy, ...tradesV11, ...tradesV12, ...tradesV12Current, ...tradesAida, ...tradesAidaCurrent]
 
     // Build trades by pool
     const tradesByPool = new Map<string, any[]>()
@@ -179,8 +192,9 @@ export async function GET() {
       tradesByPool.get(poolId)!.push(e.parsedJson)
     }
 
-    // Determine which packages are AIDA-paired
-    const isAidaPackage = (pkgId: string) => pkgId === ORIGIN_PACKAGE_AIDA
+    // Determine which packages are AIDA-paired (covers both publish eras)
+    const isAidaPackage = (pkgId: string) =>
+      pkgId === ORIGIN_PACKAGE_AIDA || pkgId === ORIGIN_PACKAGE_AIDA_CURRENT
 
     // Process each event into a token
     const tokens = await Promise.all(

@@ -53,9 +53,30 @@ export const MOONBAGS_LEGACY_PACKAGE_IDS: readonly string[] = [
   '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813', // v11 ← migrated to legacy
 ] as const
 
-// ── Moonbags Launchpad v12 (freeze CoinMetadata instead of storing as DOF) ──
-// Published: 2026-04-16  TX: J9sdFjppB8881Eo7eZXU9s9xrUeG9Y4LU7LiZBS7bWTg
-// Admin caps live on deployer `0x2957f0...`.
+// ── Moonbags Launchpad v12 — PREVIOUS publish (2026-04-16) ─────
+// Original v12 TX: J9sdFjppB8881Eo7eZXU9s9xrUeG9Y4LU7LiZBS7bWTg. Still
+// carries every pool launched between that date and the v13 republish
+// (2026-04-21). Those pools' `bonding_curve_config` references the
+// Configuration/stakeConfig/lockConfig created by the old publish, so
+// trades + claims + graduations against them MUST use this bundle —
+// routing them to the new V12 (which has fresh shared objects) would
+// fail with a shared-object mismatch.
+//
+// V11 (fresh publish sharing these same shared objects) also routes
+// here, not to the new V12.
+export const MOONBAGS_CONTRACT_V12_PREV: MoonbagsContract = {
+  packageId:     '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e',
+  module:        'moonbags',
+  configuration: '0x74b01e1bf199031609d06a3b9669fffd0c77a17b57ece97595e86b0af000a5ea', // moonbags::Configuration
+  stakeConfig:   '0x59c35bc4c50631e4d4468d9964ba23c3961e1ff8d7c6df740fcf776c8936e940', // moonbags_stake::Configuration
+  lockConfig:    '0xd3c8ab1092e85101adbdb98b5717b9911dfbc90a41dbf896cada9a25c065a5e3', // moonbags_token_lock::Configuration
+  tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
+}
+
+// ── Moonbags Launchpad v12 — CURRENT (v13 republish 2026-04-21) ──
+// Adds mutable `pool_creation_fee` on Configuration (5 SUI at launch).
+// Every NEW pool creation goes against this package; existing pools on
+// `MOONBAGS_CONTRACT_V12_PREV` keep running on the older shared objects.
 export const MOONBAGS_CONTRACT_V12: MoonbagsContract = {
   packageId:     '0x2ab8f764b67991acaf37966af2274dcf7214ae0e8cea3ede214078f248dce3d2',
   module:        'moonbags',
@@ -70,30 +91,41 @@ export const MOONBAGS_CONTRACT_V12: MoonbagsContract = {
 // `getMoonbagsContractForPackage(poolPkgId)` instead of this constant.
 export const MOONBAGS_CONTRACT: MoonbagsContract = MOONBAGS_CONTRACT_V12
 
-// All Moonbags packages we know about (v11 + legacy chain). Used to fan
-// out event queries across both code-bases.
+// All Moonbags packages we know about (current V12 + previous V12 + V11
+// + legacy chain). Used to fan out event queries across every publish era
+// so tokens from any of them show up in the UI.
 export const MOONBAGS_KNOWN_PACKAGES: readonly string[] = [
   MOONBAGS_CONTRACT_V12.packageId,
+  MOONBAGS_CONTRACT_V12_PREV.packageId,
   ...MOONBAGS_LEGACY_PACKAGE_IDS,
 ] as const
 
 /**
  * Return the right Moonbags contract bundle for a given pool's package ID.
  * The pool object's type string looks like `0x<pkg>::moonbags::Pool<Coin>`,
- * and the `0x<pkg>` segment tells us whether the pool belongs to the
- * legacy chain or to v11.
+ * and the `0x<pkg>` segment tells us which publish era the pool belongs
+ * to. Routing matters because each era has its own shared Configuration /
+ * stakeConfig / lockConfig objects and trades + claims must hit the set
+ * the pool's `bonding_curve_config` actually references.
  */
 export function getMoonbagsContractForPackage(packageId?: string | null): MoonbagsContract {
   if (packageId === MOONBAGS_AIDA_CONTRACT.packageId) return MOONBAGS_AIDA_CONTRACT
   if (!packageId) return MOONBAGS_CONTRACT_V12
   const normalized = packageId.startsWith('0x') ? packageId.toLowerCase() : `0x${packageId.toLowerCase()}`
-  // V11 is a fresh publish, not an upgrade of v7/legacy. Its pools use the
-  // SAME Configuration / lockConfig / stakeConfig shared objects as V12, so
-  // route V11 pool calls to the V12 contract bundle. (V11's packageId still
-  // appears in MOONBAGS_LEGACY_PACKAGE_IDS so the event-query fan-out covers
-  // it — the shared-config routing is a separate concern from event discovery.)
+
+  // Current V12 (v13 republish, 2026-04-21): fresh shared objects, admin-
+  // settable creation fee. New pools go here.
+  if (normalized === MOONBAGS_CONTRACT_V12.packageId.toLowerCase()) return MOONBAGS_CONTRACT_V12
+
+  // Previous V12 publish (2026-04-16) + V11 fresh publish. Both share the
+  // SAME older Configuration / stakeConfig / lockConfig objects, so any
+  // pool minted under either packageId must route to _V12_PREV — routing
+  // them to the new V12 (different shared objects) would fail at the
+  // shared-object assertion inside the Move entry.
   const V11_PKG_ID = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
-  if (normalized === V11_PKG_ID) return MOONBAGS_CONTRACT_V12
+  if (normalized === MOONBAGS_CONTRACT_V12_PREV.packageId.toLowerCase()) return MOONBAGS_CONTRACT_V12_PREV
+  if (normalized === V11_PKG_ID) return MOONBAGS_CONTRACT_V12_PREV
+
   if (MOONBAGS_LEGACY_PACKAGE_IDS.some(p => p.toLowerCase() === normalized)) {
     return MOONBAGS_CONTRACT_LEGACY
   }
