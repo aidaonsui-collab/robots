@@ -67,9 +67,9 @@ export const MOONBAGS_LEGACY_PACKAGE_IDS: readonly string[] = [
 export const MOONBAGS_CONTRACT_V12_PREV: MoonbagsContract = {
   packageId:     '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e',
   module:        'moonbags',
-  configuration: '0x74b01e1bf199031609d06a3b9669fffd0c77a17b57ece97595e86b0af000a5ea', // moonbags::Configuration (shared with V12_PREV)
-  stakeConfig:   '0x312216a4b80aa2665be3539667ef3749fafb0bde8c8ff529867ca0f0dc13bc18', // moonbags_stake::Configuration
-  lockConfig:    '0x7b3f064b45911affde459327ba394f2aa8782539d9b988c4986ee71c5bd34059', // moonbags_token_lock::Configuration
+  configuration: '0x74b01e1bf199031609d06a3b9669fffd0c77a17b57ece97595e86b0af000a5ea', // moonbags::Configuration
+  stakeConfig:   '0x59c35bc4c50631e4d4468d9964ba23c3961e1ff8d7c6df740fcf776c8936e940', // moonbags_stake::Configuration (where existing AIDA stakers live)
+  lockConfig:    '0xd3c8ab1092e85101adbdb98b5717b9911dfbc90a41dbf896cada9a25c065a5e3', // moonbags_token_lock::Configuration
   tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
 }
 
