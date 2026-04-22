@@ -9,6 +9,7 @@ import { useCurrentWallet, useSignAndExecuteTransaction } from '@mysten/dapp-kit
 import { Coins, Gift, Loader2, Wallet, AlertTriangle, ArrowRight, TrendingUp, ExternalLink, Lock } from 'lucide-react'
 import { Transaction } from '@mysten/sui/transactions'
 import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_LEGACY, SUI_CLOCK, AIDA_CONTRACT } from '@/lib/contracts'
+import { MOONBAGS_AIDA_CONTRACT } from '@/lib/contracts_aida'
 
 // Lazy-load SuiLock component
 const SuiLockPage = lazy(() => import('../suilock/page'))
@@ -32,6 +33,12 @@ const LEGACY_STAKE_CFG  = '0x4ca7022cd11cbe5bd66577b1e28adca0592dd10102b85e12cd8
 const LEGACY_POOL_ID    = '0x2a7611a0660c89532160d193057383796f45c96040f1a9c66746298ad929883a'
 
 const AIDA_TYPE = AIDA_CONTRACT.fullAddress
+
+// AIDA-paired token fees flow in AIDA (not SUI) and accumulate on a
+// separate stakeConfig under the moonbags_aida package. AIDA stakers
+// claim from here in addition to the main SUI claim above.
+const AIDA_PAIR_PKG     = MOONBAGS_AIDA_CONTRACT.packageId
+const AIDA_PAIR_STK_CFG = MOONBAGS_AIDA_CONTRACT.stakeConfig
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 async function rpc(method: string, params: any[]) {
@@ -107,6 +114,16 @@ function StakingPageInner() {
   // Legacy v1 state
   const [legacyStaked, setLegacyStaked] = useState(0)
   const [migrating, setMigrating]       = useState(false)
+
+  // AIDA-pair reward state (claimable AIDA from AIDA-paired token trading fees).
+  // Mirrors the SUI-side tracking but reads from moonbags_aida stakeConfig.
+  const [aidaPairPoolId, setAidaPairPoolId]   = useState<string | null>(null)
+  const [aidaPairRewards, setAidaPairRewards] = useState(0)     // live, ticking
+  const [aidaPairEarned,  setAidaPairEarned]  = useState<bigint>(BigInt(0))
+  const [aidaPairStakerBal, setAidaPairStakerBal] = useState<bigint>(BigInt(0))
+  const [aidaPairStakerIdx, setAidaPairStakerIdx] = useState<bigint>(BigInt(0))
+  const [aidaPairPoolIdx,   setAidaPairPoolIdx]   = useState<bigint>(BigInt(0))
+  const [claimingAidaPair,  setClaimingAidaPair]  = useState(false)
 
 
   // ── Initial load ────────────────────────────────────────────────────────────
@@ -205,6 +222,60 @@ function StakingPageInner() {
     }
   }
 
+  // ── Fetch AIDA-pair rewards ─────────────────────────────────────────────
+  // Returns claimable AIDA from the moonbags_aida stakeConfig (fees from
+  // AIDA-paired token trades). Quiet no-op if the pool doesn't exist yet
+  // — AIDA pairs are newly launched so most wallets won't have a position.
+  const fetchAidaPairRewards = useCallback(async () => {
+    if (!address) return
+    try {
+      const fields = await rpc('suix_getDynamicFields', [AIDA_PAIR_STK_CFG, null, 50])
+      const pools: any[] = fields?.data ?? []
+      const aidaPool = pools.find((p: any) =>
+        p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
+      )
+      if (!aidaPool) {
+        setAidaPairPoolId(null)
+        setAidaPairRewards(0)
+        setAidaPairEarned(BigInt(0))
+        setAidaPairStakerBal(BigInt(0))
+        setAidaPairStakerIdx(BigInt(0))
+        setAidaPairPoolIdx(BigInt(0))
+        return
+      }
+      setAidaPairPoolId(aidaPool.objectId)
+
+      const [stakerField, poolObj] = await Promise.all([
+        rpc('suix_getDynamicFieldObject', [aidaPool.objectId, { type: 'address', value: address }]),
+        rpc('sui_getObject', [aidaPool.objectId, { showContent: true }]),
+      ])
+      const poolRwdIdx = BigInt(poolObj?.data?.content?.fields?.reward_index ?? 0)
+      setAidaPairPoolIdx(poolRwdIdx)
+
+      const f = stakerField?.data?.content?.fields
+      if (!f) {
+        setAidaPairRewards(0)
+        setAidaPairEarned(BigInt(0))
+        setAidaPairStakerBal(BigInt(0))
+        setAidaPairStakerIdx(BigInt(0))
+        return
+      }
+      const balance    = BigInt(f.balance ?? 0)
+      const earned     = BigInt(f.earned ?? 0)
+      const stakerIdx  = BigInt(f.reward_index ?? 0)
+      const MULTIPLIER = BigInt('10000000000000000') // 1e16, contract constant
+      const pending = poolRwdIdx > stakerIdx
+        ? (balance * (poolRwdIdx - stakerIdx)) / MULTIPLIER
+        : BigInt(0)
+      setAidaPairEarned(earned)
+      setAidaPairStakerBal(balance)
+      setAidaPairStakerIdx(stakerIdx)
+      setAidaPairRewards(Number(earned + pending) / 1e9)
+    } catch (e) {
+      console.warn('[staking] fetchAidaPairRewards failed', e)
+    }
+  }, [address])
+
   // ── Fetch all balances ───────────────────────────────────────────────────────
   const fetchAllBalances = async () => {
     if (!address) return
@@ -258,6 +329,9 @@ function StakingPageInner() {
         const f = legacyField.data.content.fields
         setLegacyStaked(Number(f.balance ?? 0) / 1e9)
       }
+
+      // AIDA-pair rewards (claimable AIDA from AIDA-pair token fees)
+      await fetchAidaPairRewards()
 
       setStatusMsg('')
     } catch (e: any) {
@@ -424,6 +498,34 @@ function StakingPageInner() {
       setStatusMsg('Error: ' + e.message)
     }
     setLoading(false)
+  }
+
+  // ── Claim AIDA-pair rewards ─────────────────────────────────────────────
+  // Separate claim against the moonbags_aida stakeConfig. AIDA-paired token
+  // trading fees accumulate here in AIDA (not SUI) and require their own
+  // claim_staking_pool call on the moonbags_aida package.
+  const handleClaimAidaPair = async () => {
+    if (!connected || !address) return alert('Connect wallet first')
+    if (aidaPairRewards <= 0 && aidaPairEarned <= 0n) {
+      return alert('No AIDA-pair rewards yet — these accrue from AIDA-paired token trading fees.')
+    }
+    setClaimingAidaPair(true)
+    setStatusMsg('Claiming AIDA rewards...')
+    try {
+      const tx = new Transaction()
+      tx.moveCall({
+        target: `${AIDA_PAIR_PKG}::moonbags_stake::claim_staking_pool`,
+        typeArguments: [AIDA_TYPE],
+        arguments: [tx.object(AIDA_PAIR_STK_CFG), tx.object(SUI_CLOCK)],
+      })
+      const result = await signAndExecute({ transaction: tx })
+      setStatusMsg('Claimed AIDA!')
+      alert(`✅ Claimed ${aidaPairRewards.toFixed(4)} AIDA!\nTx: ${result.digest}`)
+      setTimeout(() => { fetchAllBalances(); fetchAidaPairRewards() }, 2000)
+    } catch (e: any) {
+      setStatusMsg('Error: ' + e.message)
+    }
+    setClaimingAidaPair(false)
   }
 
   // Fetch the current NAVI ProtocolPackage ID dynamically — NAVI upgrades their
@@ -804,6 +906,11 @@ function StakingPageInner() {
               <p className="text-2xl font-bold text-green-400 tabular-nums">
                 {liveRewards.toFixed(6)} <span className="text-sm text-muted-foreground">SUI</span>
               </p>
+              {aidaPairRewards > 0 && (
+                <p className="text-sm font-semibold text-[#D4AF37] tabular-nums mt-0.5">
+                  + {aidaPairRewards.toFixed(6)} <span className="text-xs text-muted-foreground font-normal">AIDA</span>
+                </p>
+              )}
               {v3Staked > 0 && poolRwdIdx > stakerRwdIdx && (
                 <p className="text-xs text-green-500/70 flex items-center gap-1 mt-1">
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -813,6 +920,11 @@ function StakingPageInner() {
               {stakerEarned > 0n && (
                 <p className="text-xs text-green-400 mt-1 font-semibold">
                   ✅ {(Number(stakerEarned) / 1e9).toFixed(6)} SUI claimable now
+                </p>
+              )}
+              {aidaPairEarned > 0n && (
+                <p className="text-xs text-[#D4AF37] mt-1 font-semibold">
+                  ✅ {(Number(aidaPairEarned) / 1e9).toFixed(6)} AIDA claimable now
                 </p>
               )}
               {stakerEarned === 0n && liveRewards > 0 && (
@@ -874,6 +986,20 @@ function StakingPageInner() {
               Claim {liveRewards.toFixed(6)} SUI
             </button>
           </div>
+          {/* AIDA claim — shown whenever a position exists on the AIDA-pair
+              config. Hidden entirely if no pool is set up yet to avoid
+              confusing users who only care about the SUI side. */}
+          {(aidaPairRewards > 0 || aidaPairEarned > 0n || aidaPairStakerBal > 0n) && (
+            <button
+              onClick={handleClaimAidaPair}
+              disabled={claimingAidaPair || (aidaPairEarned <= 0n && aidaPairRewards <= 0)}
+              className="w-full mb-3 py-3 bg-[#D4AF37]/15 border border-[#D4AF37]/30 rounded-xl text-[#D4AF37] font-semibold flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-[#D4AF37]/25 transition-colors"
+            >
+              {claimingAidaPair ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
+              Claim {aidaPairRewards.toFixed(6)} AIDA
+              <span className="text-xs opacity-70">(from AIDA pairs)</span>
+            </button>
+          )}
           <button
             onClick={handleClaimAndDeposit}
             disabled={naviLoading || (stakerEarned <= 0n && liveRewards <= 0)}
