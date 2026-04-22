@@ -29,6 +29,20 @@ export const MOONBAGS_AIDA_CONTRACT: MoonbagsContract = {
   tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
 }
 
+// ── Moonbags AIDA PREV (2026-04-18 original publish) ──────────
+// Pools launched under the first AIDA-fork package still reference these
+// shared objects via their bonding_curve_config. Trade/claim calls on
+// those pools MUST target this bundle — routing to the current AIDA
+// bundle would fail at the shared-object version assertion.
+export const MOONBAGS_AIDA_CONTRACT_PREV: MoonbagsContract = {
+  packageId:     '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8',
+  module:        'moonbags',
+  configuration: '0x66bb8347ae793fb2f955465558b8c1ef74ab74289a9a5cc4a558e6cbbc587d91',
+  stakeConfig:   '0x64c07e79494e0f51923c0a7a524a9429605d464e3583be3f9b20ce3765a92cd5',
+  lockConfig:    '0x22c3121014b0eca1eca28cf2a9ea680d625b80679e1d3771545cbcad9e15faa4',
+  tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
+}
+
 // AIDA coin type string (used as typeArgument)
 export const AIDA_COIN_TYPE = '0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA'
 
@@ -43,11 +57,23 @@ export const BLUEFIN_SPOT_CONTRACT = '0x3492c874c1e3b3e2984e8c41b589e642d4d0a5d6
 
 export type PairToken = 'SUI' | 'AIDA'
 
-// Given a moonbags package ID (from a pool's on-chain type), return the pair
-// token for that pool. AIDA-paired pools come from MOONBAGS_AIDA_CONTRACT;
-// all other (SUI-paired) packages return 'SUI'.
+// Every AIDA-fork package ID ever shipped to mainnet. The AIDA-pair
+// contract has been republished as admin-settable-fee iterations landed,
+// so a pool's package segment could match any of these and still be an
+// AIDA pair. Add new pkgIds here whenever the admin republishes.
+export const AIDA_PAIR_PACKAGE_IDS: readonly string[] = [
+  '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8', // 2026-04-18 publish
+  '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f', // 2026-04-21 republish (stale bytecode, superseded)
+  '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // 2026-04-21 republish (current, setter verified)
+] as const
+
+// Given a moonbags package ID (from a pool's on-chain type), return the
+// pair token for that pool. Any AIDA-fork package id — including the
+// older publishes — maps to 'AIDA'; everything else is 'SUI'.
 export function getPairType(moonbagsPackageId?: string | null): PairToken {
-  return moonbagsPackageId === MOONBAGS_AIDA_CONTRACT.packageId ? 'AIDA' : 'SUI'
+  if (!moonbagsPackageId) return 'SUI'
+  const normalized = moonbagsPackageId.toLowerCase()
+  return AIDA_PAIR_PACKAGE_IDS.some(p => p.toLowerCase() === normalized) ? 'AIDA' : 'SUI'
 }
 
 // Returns the coin type for the pair side of a pool (what users pay with).

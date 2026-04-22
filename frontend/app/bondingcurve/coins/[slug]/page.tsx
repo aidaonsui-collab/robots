@@ -270,13 +270,14 @@ function TopHolders({ coinType, poolId, creatorAddress, onTotalCount }: { coinTy
   )
 }
 
-function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, moonbagsPackageId }: {
+function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, moonbagsPackageId, pairType }: {
   token: typeof MOCK_TOKEN
   coinType?: string
   poolId?: string
   creatorAddress?: string
   connectedAddress?: string
   moonbagsPackageId?: string
+  pairType?: 'SUI' | 'AIDA'
 }) {
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction()
   const [creatorRewards, setCreatorRewards] = useState<number | null>(null)
@@ -503,7 +504,7 @@ function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, mo
                 <div>
                   <p className="text-xs text-gray-500 mb-0.5">Your Creator Fees</p>
                   <p className="text-xl font-bold text-yellow-400">
-                    {creatorRewards === null ? '...' : `${creatorRewards.toFixed(4)} SUI`}
+                    {creatorRewards === null ? '...' : `${creatorRewards.toFixed(4)} ${pairType ?? 'SUI'}`}
                   </p>
                   <p className="text-xs text-gray-600 mt-0.5">30% of trading fees go to creator</p>
                 </div>
@@ -527,9 +528,9 @@ function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, mo
           <BarChart2 className="w-4 h-4 text-[#D4AF37]" /> Bonding Curve Progress
         </h4>
         <div className="flex justify-between text-xs text-gray-500 mb-2">
-          <span>0 SUI</span>
+          <span>0 {pairType ?? 'SUI'}</span>
           <span className="text-[#D4AF37] font-semibold">{token.progress}% filled</span>
-          <span>Target: {token.threshold} SUI</span>
+          <span>Target: {token.threshold} {pairType ?? 'SUI'}</span>
         </div>
         <div className="h-4 bg-[#14142a] rounded-full overflow-hidden border border-white/5 mb-3">
           <div
@@ -540,11 +541,11 @@ function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, mo
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-[#14142a] rounded-lg p-3 border border-white/5">
             <p className="text-xs text-gray-500 mb-1">Raised</p>
-            <p className="font-bold text-white">{token.realSuiRaised.toFixed(1)} SUI</p>
+            <p className="font-bold text-white">{token.realSuiRaised.toFixed(1)} {pairType ?? 'SUI'}</p>
           </div>
           <div className="bg-[#14142a] rounded-lg p-3 border border-white/5">
             <p className="text-xs text-gray-500 mb-1">Remaining</p>
-            <p className="font-bold text-white">{(token.threshold - token.realSuiRaised).toFixed(1)} SUI</p>
+            <p className="font-bold text-white">{(token.threshold - token.realSuiRaised).toFixed(1)} {pairType ?? 'SUI'}</p>
           </div>
         </div>
         {token.progress >= 70 && (
@@ -641,7 +642,15 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
 
   const priceImpact = parseFloat(amount || '0') > 50 ? '>5%' : '<0.1%'
   const fee = parseFloat(amount || '0') * 0.01
-  const quickAmounts = mode === 'buy' ? [1, 5, 10, 25] : [25, 50, 75, 100]
+  // Buy-side presets are pair-specific: SUI uses small whole-number amounts,
+  // AIDA uses large amounts to match its much lower per-token USD price.
+  // Sell-side presets are the same % of token balance regardless of pair.
+  const buyPresetsSui  = [1, 5, 10, 25]
+  const buyPresetsAida = [50_000, 100_000, 250_000, 1_000_000]
+  const sellPresets    = [25, 50, 75, 100]
+  const quickAmounts = mode === 'buy'
+    ? (pairType === 'AIDA' ? buyPresetsAida : buyPresetsSui)
+    : sellPresets
 
   // Route per-pool: the pool's package segment tells us which bundle's
   // shared objects to use. The legacy v7 chain uses a 10-arg Cetus-aware
@@ -893,7 +902,7 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
           />
           <div className="flex-shrink-0 flex items-center gap-1.5 bg-[#14142a] border border-white/10 rounded-lg px-2.5 py-1.5">
             <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#FFD700] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
-              {mode === 'buy' ? 'S' : token.symbol[0]}
+              {mode === 'buy' ? pairType[0] : token.symbol[0]}
             </div>
             <span className="text-sm font-semibold text-gray-200">{mode === 'buy' ? pairType : token.symbol}</span>
           </div>
@@ -901,15 +910,24 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
 
         {/* Quick amounts */}
         <div className="flex gap-2 mt-3">
-          {quickAmounts.map((q) => (
-            <button
-              key={q}
-              onClick={() => setAmount(mode === 'buy' ? q.toString() : (tokenBalance * q / 100).toFixed(2))}
-              className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-white/5 hover:bg-[#D4AF37]/20 text-gray-400 hover:text-[#D4AF37] border border-white/5 hover:border-[#D4AF37]/30 transition-all"
-            >
-              {mode === 'buy' ? `${q} ${pairType}` : `${q}%`}
-            </button>
-          ))}
+          {quickAmounts.map((q) => {
+            // Collapse large AIDA presets into K/M suffix for button labels
+            // (50000 → "50K", 1000000 → "1M") while keeping the raw value
+            // in the amount input so the tx uses the full number.
+            const formatBuy = (n: number) =>
+              n >= 1_000_000 ? `${n / 1_000_000}M`
+              : n >= 1_000   ? `${n / 1_000}K`
+              : String(n)
+            return (
+              <button
+                key={q}
+                onClick={() => setAmount(mode === 'buy' ? q.toString() : (tokenBalance * q / 100).toFixed(2))}
+                className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-white/5 hover:bg-[#D4AF37]/20 text-gray-400 hover:text-[#D4AF37] border border-white/5 hover:border-[#D4AF37]/30 transition-all"
+              >
+                {mode === 'buy' ? `${formatBuy(q)} ${pairType}` : `${q}%`}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -942,7 +960,7 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
       <div className="bg-[#0f0f17] rounded-xl border border-gray-800/50 p-4 space-y-2.5 text-sm">
         <div className="flex justify-between">
           <span className="text-gray-500">Price</span>
-          <span className="text-gray-200">{formatSmallPrice(token.currentPrice)} SUI/{token.symbol}</span>
+          <span className="text-gray-200">{formatSmallPrice(token.currentPrice)} {pairType}/{token.symbol}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-gray-500">Price Impact</span>
@@ -1225,7 +1243,7 @@ function TxnsTab({ trades, coinType, poolId, creatorAddress, pairType }: { trade
       {/* Table header */}
       <div className="grid grid-cols-4 gap-2 text-[10px] text-gray-600 uppercase tracking-widest py-2 px-3 border-b border-gray-800/40 mb-1">
         <span>Type / Wallet</span>
-        <span className="text-right">SUI Amount</span>
+        <span className="text-right">{pairType ?? 'SUI'} Amount</span>
         <span className="text-right">Tokens</span>
         <span className="text-right">Price / Time</span>
       </div>
@@ -1620,7 +1638,7 @@ export default function CoinPage() {
               </div>
               <div className="flex items-center gap-3 mt-1.5">
                 <span className={`text-2xl font-bold ${priceUp ? 'text-green-400' : 'text-red-400'}`}>
-                  {formatSmallPrice(token.currentPrice)} SUI
+                  {formatSmallPrice(token.currentPrice)} {pairType}
                 </span>
                 <span className={`flex items-center gap-1 text-sm font-semibold px-2 py-0.5 rounded-full ${priceUp ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>
                   {priceUp ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
@@ -1740,7 +1758,7 @@ export default function CoinPage() {
                     <BubbleMap coinType={poolData.coinType} symbol={token.symbol} poolId={poolData.poolId} />
                   </div>
                 )}
-                {activeTab === 'info' && <InfoTab token={token} coinType={poolData?.coinType} poolId={poolData?.poolId} creatorAddress={poolData?.creator} connectedAddress={connectedAddress} moonbagsPackageId={poolData?.moonbagsPackageId} />}
+                {activeTab === 'info' && <InfoTab token={token} coinType={poolData?.coinType} poolId={poolData?.poolId} creatorAddress={poolData?.creator} connectedAddress={connectedAddress} moonbagsPackageId={poolData?.moonbagsPackageId} pairType={pairType} />}
                 {activeTab === 'chat' && <ChatTab connectedAddress={connectedAddress} poolId={poolData?.poolId} />}
                 {activeTab === 'stake' && <StakeTab token={token} poolData={poolData} />}
                 {activeTab === 'earnings' && (
@@ -1854,7 +1872,7 @@ export default function CoinPage() {
                                   <div className="text-xs text-gray-600">From {trade.type} trade</div>
                                 </div>
                                 <div className="text-right">
-                                  <div className="text-[#D4AF37] font-bold">+{creatorEarnings.toFixed(4)} SUI</div>
+                                  <div className="text-[#D4AF37] font-bold">+{creatorEarnings.toFixed(4)} {pairType}</div>
                                 </div>
                               </div>
                             )

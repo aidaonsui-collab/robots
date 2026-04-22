@@ -1,4 +1,4 @@
-import { MOONBAGS_AIDA_CONTRACT } from './contracts_aida'
+import { MOONBAGS_AIDA_CONTRACT, MOONBAGS_AIDA_CONTRACT_PREV } from './contracts_aida'
 // ============================================================
 // TheOdyssey.fun — Contract Addresses (Verified on-chain)
 // Last verified: 2026-04-09 — v11 coexist refactor
@@ -109,9 +109,14 @@ export const MOONBAGS_KNOWN_PACKAGES: readonly string[] = [
  * the pool's `bonding_curve_config` actually references.
  */
 export function getMoonbagsContractForPackage(packageId?: string | null): MoonbagsContract {
-  if (packageId === MOONBAGS_AIDA_CONTRACT.packageId) return MOONBAGS_AIDA_CONTRACT
   if (!packageId) return MOONBAGS_CONTRACT_V12
   const normalized = packageId.startsWith('0x') ? packageId.toLowerCase() : `0x${packageId.toLowerCase()}`
+
+  // AIDA-fork routing — the current publish uses MOONBAGS_AIDA_CONTRACT's
+  // shared objects; pools minted under the 2026-04-18 publish still
+  // reference the original set, so they must route to the PREV bundle.
+  if (normalized === MOONBAGS_AIDA_CONTRACT.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT
+  if (normalized === MOONBAGS_AIDA_CONTRACT_PREV.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT_PREV
 
   // Current V12 (v13 republish, 2026-04-21): fresh shared objects, admin-
   // settable creation fee. New pools go here.
