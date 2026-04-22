@@ -40,6 +40,7 @@ const HIDDEN_TOKENS = new Set([
   '0x4e392b49594d541b2c926cdf10fac61c18306d7847f3f216cca4bb8686df10bf::fucktexxas::FUCKTEXXAS',
   '0x0f38cfd0374810813a18298f41bf9a58f8c2d0080197a877416264cb44b14e35::scammer::SCAMMER',
   '0xea12d0e905d694e04a06fe0925508e51a10b2a4fc46772f6c6f54c2b83ce60d1::fuckbyme::FUCKBYME',
+  '0x72469f9541dea1dea3168ab7fbddd7c28f9d25c74d1697bdda49371fa01a2fac::fuckwife::FUCKWIFE',
 ])
 
 async function queryEvents(eventType: string, limit: number, descending: boolean) {
