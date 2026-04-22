@@ -16,7 +16,7 @@ import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 // ── Constants ─────────────────────────────────────────────────
 // Bonding curve matches Moonbags pool depth AND magnitude.
 // Formula: tokens = VIRTUAL_TOKEN_RESERVES * sui_mist / (VIRTUAL_SUI_START + sui_mist)
-const POOL_CREATION_FEE_MIST = BigInt(10_000_000);              // 0.01 SUI
+const POOL_CREATION_FEE_MIST = BigInt(1_000_000_000);           // 1 SUI
 type PairType = 'SUI' | 'AIDA';
 // Pool virtual reserves (from V12 + AIDA configs, both unified 2026-04-20):
 //   I = initial_virtual_token_reserves =   100_000_000_000_000 (config field)
@@ -816,7 +816,7 @@ export default function CreateTokenPage() {
             {/* Curve info */}
             <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
               <div className="bg-white/3 rounded-lg p-2 text-center">
-                <div className="text-gray-300 font-medium">0.01 SUI</div>
+                <div className="text-gray-300 font-medium">1 SUI</div>
                 <div>creation fee</div>
               </div>
               <div className="bg-white/3 rounded-lg p-2 text-center">
@@ -856,7 +856,7 @@ export default function CreateTokenPage() {
             )}
 
             <p className="text-xs text-gray-600 text-center">
-              0.01 SUI creation fee · fees: 40% platform · 30% creator · 30% AIDA stakers
+              1 SUI creation fee · fees: 40% platform · 30% creator · 30% AIDA stakers
             </p>
           </div>
         )}

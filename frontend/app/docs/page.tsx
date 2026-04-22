@@ -180,7 +180,7 @@ export default function DocsPage() {
 
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
             <h3 className="text-white font-semibold text-sm mb-3">Key Parameters</h3>
-            <InfoRow label="Creation Fee" value="0.01 SUI" />
+            <InfoRow label="Creation Fee" value="1 SUI" />
             <InfoRow label="Platform Fee" value="2% per trade" />
             <InfoRow label="Default Graduation Threshold" value="2,000 SUI" />
             <InfoRow label="Minimum Threshold" value="1,000 SUI" />
@@ -208,7 +208,7 @@ export default function DocsPage() {
 
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">
             <h3 className="text-white font-semibold text-sm mb-3">Key Parameters</h3>
-            <InfoRow label="Creation Fee" value="0.01 SUI" />
+            <InfoRow label="Creation Fee" value="1 SUI" />
             <InfoRow label="Platform Fee" value="2% on contributions" />
             <InfoRow label="Fee Recipient" value="Treasury wallet" />
             <InfoRow label="Token Distribution" value="Configurable — presale / liquidity / creator BPS" />

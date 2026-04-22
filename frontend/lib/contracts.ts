@@ -172,7 +172,7 @@ export const CURVE_CONFIG = {
   remainTokenReserves:         BigInt(400_000_000_000_000),   // 400M tokens (4× initial) — mints 2R = 800M per pool
   defaultThresholdMist:        BigInt(2_000_000_000_000),     // 2000 SUI graduation (default)
   minimumThresholdMist:        BigInt(1_000_000_000_000),     // 1000 SUI minimum (contract-enforced)
-  poolCreationFeeMist:         BigInt(10_000_000),            // 0.01 SUI
+  poolCreationFeeMist:         BigInt(1_000_000_000),         // 1 SUI
   platformFeeBps:              200,                           // 2% (200/10000)
   tokenDecimals:               6,
 }
