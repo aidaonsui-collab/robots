@@ -16,7 +16,12 @@ import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 // ── Constants ─────────────────────────────────────────────────
 // Bonding curve matches Moonbags pool depth AND magnitude.
 // Formula: tokens = VIRTUAL_TOKEN_RESERVES * sui_mist / (VIRTUAL_SUI_START + sui_mist)
-const POOL_CREATION_FEE_MIST = BigInt(5_000_000_000);           // 5 SUI (matches configuration.pool_creation_fee on published contracts)
+// Pool creation fee is read live from the pair's Configuration object —
+// both contracts now expose a mutable `pool_creation_fee: u64` field set
+// via `setter_pool_creation_fee`. These fallbacks are used only while the
+// on-chain read is in flight or if it fails.
+const DEFAULT_FEE_SUI_MIST  = BigInt(5_000_000_000)           // 5 SUI
+const DEFAULT_FEE_AIDA_MIST = BigInt(200_000_000_000_000)     // 200,000 AIDA
 type PairType = 'SUI' | 'AIDA';
 // Pool virtual reserves (from V12 + AIDA configs, both unified 2026-04-20):
 //   I = initial_virtual_token_reserves =   100_000_000_000_000 (config field)
@@ -92,6 +97,11 @@ export default function CreateTokenPage() {
   const [targetRaise, setTargetRaise] = useState('2000')
   const [pairType, setPairType] = useState<PairType>('SUI')
 
+  // Live on-chain `pool_creation_fee` from the selected pair's Configuration.
+  // Refetches whenever the user flips SUI ↔ AIDA so the fee shown always
+  // matches what `setter_pool_creation_fee` currently has on mainnet.
+  const [creationFeeMist, setCreationFeeMist] = useState<bigint | null>(null)
+
   const MIN_AIDA = 20_000_000
 
   useEffect(() => {
@@ -99,6 +109,40 @@ export default function CreateTokenPage() {
       setTargetRaise(String(MIN_AIDA))
     }
   }, [pairType])
+
+  useEffect(() => {
+    const isAida = pairType === 'AIDA'
+    const configId = isAida
+      ? MOONBAGS_AIDA_CONTRACT.configuration
+      : MOONBAGS_CONTRACT_V12.configuration
+    const fallback = isAida ? DEFAULT_FEE_AIDA_MIST : DEFAULT_FEE_SUI_MIST
+    let cancelled = false
+    setCreationFeeMist(null) // show loading until the new value lands
+    suiClient.getObject({ id: configId, options: { showContent: true } })
+      .then((res) => {
+        if (cancelled) return
+        const fields = (res.data?.content as any)?.fields
+        const raw = fields?.pool_creation_fee
+        if (raw != null) setCreationFeeMist(BigInt(raw))
+        else setCreationFeeMist(fallback)
+      })
+      .catch(() => { if (!cancelled) setCreationFeeMist(fallback) })
+    return () => { cancelled = true }
+  }, [pairType, suiClient])
+
+  // Both SUI and AIDA use 9 decimals. Round whole-number fees so the UI
+  // reads "5 SUI" / "200,000 AIDA" instead of "5.0000".
+  const formatFee = (mist: bigint | null, currency: PairType): string => {
+    if (mist == null) return `… ${currency}`
+    const tokens = Number(mist) / 1e9
+    if (!isFinite(tokens)) return `… ${currency}`
+    const isWhole = Math.abs(tokens - Math.round(tokens)) < 1e-9
+    const formatted = tokens.toLocaleString(undefined, {
+      maximumFractionDigits: isWhole ? 0 : 4,
+      minimumFractionDigits: 0,
+    })
+    return `${formatted} ${currency}`
+  }
 
   const [formData, setFormData] = useState({
     name: '', ticker: '', description: '',
@@ -271,6 +315,12 @@ export default function CreateTokenPage() {
       const isAidaPair = pairType === 'AIDA'
       const coinType = isAidaPair ? AIDA_COIN_TYPE : '0x2::sui::SUI'
 
+      // Live on-chain creation fee — matches `configuration.pool_creation_fee`
+      // the Move entry asserts against. Fall back to the hard defaults if
+      // the read never landed (better to try the tx with the expected
+      // value than to block launch outright on an RPC hiccup).
+      const feeMist = creationFeeMist ?? (isAidaPair ? DEFAULT_FEE_AIDA_MIST : DEFAULT_FEE_SUI_MIST)
+
       // ── firstBuy + fee coins ───────────────────────────────────────
       // AIDA pair: both fee and firstBuy are Coin<AIDA>, split from user's AIDA balance
       // SUI pair: both are Coin<SUI>, split from gas
@@ -288,7 +338,7 @@ export default function CreateTokenPage() {
             arguments: [baseCoin, tx2.object(aidaCoins[i].coinObjectId)],
           })
         }
-        const [feeCoin] = tx2.splitCoins(baseCoin, [tx2.pure.u64(POOL_CREATION_FEE_MIST)])
+        const [feeCoin] = tx2.splitCoins(baseCoin, [tx2.pure.u64(feeMist)])
         fee = feeCoin
         if (configSuiMist > 0n) {
           const [fb] = tx2.splitCoins(baseCoin, [tx2.pure.u64(configSuiMist)])
@@ -297,7 +347,7 @@ export default function CreateTokenPage() {
           firstBuy = tx2.moveCall({ target: '0x2::coin::zero', typeArguments: [AIDA_COIN_TYPE], arguments: [] })
         }
       } else {
-        const [feeCoin] = tx2.splitCoins(tx2.gas, [tx2.pure.u64(POOL_CREATION_FEE_MIST)])
+        const [feeCoin] = tx2.splitCoins(tx2.gas, [tx2.pure.u64(feeMist)])
         fee = feeCoin
         if (configSuiMist > 0n) {
           const [fb] = tx2.splitCoins(tx2.gas, [tx2.pure.u64(configSuiMist)])
@@ -816,7 +866,7 @@ export default function CreateTokenPage() {
             {/* Curve info */}
             <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
               <div className="bg-white/3 rounded-lg p-2 text-center">
-                <div className="text-gray-300 font-medium">5 SUI</div>
+                <div className="text-gray-300 font-medium">{formatFee(creationFeeMist, pairType)}</div>
                 <div>creation fee</div>
               </div>
               <div className="bg-white/3 rounded-lg p-2 text-center">
@@ -856,7 +906,7 @@ export default function CreateTokenPage() {
             )}
 
             <p className="text-xs text-gray-600 text-center">
-              5 SUI creation fee · fees: 40% platform · 30% creator · 30% AIDA stakers
+              {formatFee(creationFeeMist, pairType)} creation fee · fees: 40% platform · 30% creator · 30% AIDA stakers
             </p>
           </div>
         )}
