@@ -2,9 +2,9 @@
 // AIDA-Paired Bonding Curve Contract (robots repo)
 // Fork of Odyssey Moonbags — quote token changed from SUI → AIDA
 //
-// Published: 2026-04-18
-// Package: 0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f
-// TX: D3PpLdBdvqhFgrKyfQP7b2NiNWPPgBBDy21YRF933v79
+// Published: 2026-04-22 (v2)
+// Package: 0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313
+// TX: FiJ2byM6yYexgRcSRUBjSAZZB9faHWfwMtJAdbADQEyq (setter tested OK)
 // Modules: curves, moonbags, moonbags_stake, moonbags_token_lock, utils
 //
 // AIDA coin: 0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA
@@ -21,11 +21,11 @@ export interface MoonbagsContract {
 }
 
 export const MOONBAGS_AIDA_CONTRACT: MoonbagsContract = {
-  packageId:     '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f',
+  packageId:     '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313',
   module:        'moonbags',
-  configuration: '0x23a7b2fe9f93085fbd635488f1d72589f9e1e0d332c7271c2e598097e623e10c',
-  stakeConfig:   '0xfeec575e6585e48629b9c157d6bf44c1932c7d276e986d2c5808a2d8e2819f3a',
-  lockConfig:    '0x21c44c8a53b2bcac5715517349ad58322845a45a5b552fde0a537c3c366e9b35',
+  configuration: '0x1b08a4a16024a7456e3c42449daec1dc8cbe130e24d6a6c37482e4fd2293b60f',
+  stakeConfig:   '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09',
+  lockConfig:    '0x2d6b3083c48aea4dc6db9e64daa5f805b124f578ac43b3beea224a079aedf00a',
   tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
 }
 
