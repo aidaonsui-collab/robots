@@ -23,7 +23,11 @@ module moonbags_aida::moonbags {
     const VERSION: u64 = 3;
     const FEE_DENOMINATOR: u64 = 10000;
     const DISTRIBUTE_FEE_LOCK_DURATION_MS: u64 = 300_000; // 5 minutes
-    const POOL_CREATION_FEE: u64 = 10_000_000; // 0.01 SUI
+    // Deprecated — fee now lives on `Configuration.pool_creation_fee`,
+    // mutable via `setter_pool_creation_fee`. Kept to preserve ABI and as
+    // a sentinel default for any caller still reading it from storage.
+    #[allow(unused_const)]
+    const POOL_CREATION_FEE: u64 = 10_000_000; // 0.01 SUI (legacy)
     const MIGRATION_FEE: u64 = 50_000_000_000; // 50 SUI sent to treasury on graduation
 
     // === Constants Addresses ===
@@ -70,6 +74,10 @@ module moonbags_aida::moonbags {
         init_stake_fee_withdraw: u16,
         init_platform_stake_fee_withdraw: u16,
         token_platform_type_name: String,
+        // Mutable via `setter_pool_creation_fee`. Replaces the old compiled
+        // `POOL_CREATION_FEE` constant so the admin can retune the launch
+        // price without a republish. Stored in the pair coin's mist (9d).
+        pool_creation_fee: u64,
     }
 
     public struct ThresholdConfig has store, key {
@@ -274,6 +282,7 @@ module moonbags_aida::moonbags {
             init_stake_fee_withdraw: 1,                            // ~0% meme stakers (must be >0)
             init_platform_stake_fee_withdraw: 2999,                // ~30% AIDA stakers
             token_platform_type_name: b"cee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA".to_ascii_string(),
+            pool_creation_fee: 5_000_000_000,                      // 5 AIDA at launch; admin can retune
         };
         
         dynamic_field::add(&mut configuration.id, BUY_BLOCK_DURATION_FIELD, 1000);
@@ -306,7 +315,7 @@ module moonbags_aida::moonbags {
         assert!(ascii::length(&twitter) <= 500, EInvalidInput);
         assert!(ascii::length(&telegram) <= 500, EInvalidInput);
         assert!(ascii::length(&website) <= 500, EInvalidInput);
-        assert!(coin::value<AIDA>(&pool_creation_fee) >= POOL_CREATION_FEE, EInvalidInput);
+        assert!(coin::value<AIDA>(&pool_creation_fee) >= configuration.pool_creation_fee, EInvalidInput);
 
         assert_version(configuration.version);
         assert!(coin::total_supply<Token>(&treasury_cap) == 0, EExistTokenSupply);
@@ -400,7 +409,7 @@ module moonbags_aida::moonbags {
         moonbags_stake::initialize_staking_pool<Token>(stake_config, clock, ctx);
         moonbags_stake::initialize_creator_pool<Token>(stake_config, ctx.sender(), clock, ctx);
 
-        let collect_creation_fee = coin::split(&mut pool_creation_fee, POOL_CREATION_FEE, ctx);
+        let collect_creation_fee = coin::split(&mut pool_creation_fee, configuration.pool_creation_fee, ctx);
         transfer::public_transfer(collect_creation_fee, configuration.fee_platform_recipient);
         transfer::public_transfer(pool_creation_fee, ctx.sender());
     }
@@ -603,7 +612,7 @@ module moonbags_aida::moonbags {
         assert!(ascii::length(&twitter) <= 500, EInvalidInput);
         assert!(ascii::length(&telegram) <= 500, EInvalidInput);
         assert!(ascii::length(&website) <= 500, EInvalidInput);
-        assert!(coin::value<AIDA>(&pool_creation_fee) >= POOL_CREATION_FEE, EInvalidInput);
+        assert!(coin::value<AIDA>(&pool_creation_fee) >= configuration.pool_creation_fee, EInvalidInput);
 
         assert_version(configuration.version);
         assert!(coin::total_supply<Token>(&treasury_cap) == 0, EExistTokenSupply);
@@ -708,7 +717,7 @@ module moonbags_aida::moonbags {
         moonbags_stake::initialize_staking_pool<Token>(stake_config, clock, ctx);
         moonbags_stake::initialize_creator_pool<Token>(stake_config, ctx.sender(), clock, ctx);
 
-        let collect_creation_fee = coin::split(&mut pool_creation_fee, POOL_CREATION_FEE, ctx);
+        let collect_creation_fee = coin::split(&mut pool_creation_fee, configuration.pool_creation_fee, ctx);
         transfer::public_transfer(collect_creation_fee, configuration.fee_platform_recipient);
         transfer::public_transfer(pool_creation_fee, ctx.sender());
     }
@@ -889,6 +898,19 @@ module moonbags_aida::moonbags {
         new_initial_virtual_token_reserves: u64,
     ) {
         configuration.initial_virtual_token_reserves = new_initial_virtual_token_reserves;
+    }
+
+    /// Admin-only setter for the per-launch pool creation fee (in AIDA mist).
+    /// Replaces the old compiled-in `POOL_CREATION_FEE` constant — now that
+    /// `create_with_fee` and `create_and_lock_first_buy_with_fee` read from
+    /// `configuration.pool_creation_fee` at runtime, a single tx can retune
+    /// the launch price without a package republish.
+    public entry fun setter_pool_creation_fee(
+        _: &AdminCap,
+        configuration: &mut Configuration,
+        new_pool_creation_fee: u64,
+    ) {
+        configuration.pool_creation_fee = new_pool_creation_fee;
     }
 
     fun get_virtual_remain_token_reserves<Token>(pool: &Pool<Token>): u64 {
