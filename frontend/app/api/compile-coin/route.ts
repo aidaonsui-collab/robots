@@ -26,10 +26,32 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol })
     })
-    
+
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Compilation failed')
+      // Preserve the microservice's real error so the UI can show the
+      // underlying `sui move build` stderr instead of the bare wrapper
+      // message. Prior behaviour stringified through `throw new Error`
+      // and lost everything but the first line.
+      const contentType = response.headers.get('content-type') ?? ''
+      let detail: unknown
+      try {
+        detail = contentType.includes('application/json')
+          ? await response.json()
+          : await response.text()
+      } catch {
+        detail = `Upstream ${response.status} ${response.statusText}`
+      }
+      console.error('[compile-coin] upstream error', response.status, detail)
+      return NextResponse.json(
+        {
+          error: typeof detail === 'string'
+            ? detail
+            : ((detail as any)?.error ?? 'Compilation failed'),
+          upstreamStatus: response.status,
+          upstreamBody: detail,
+        },
+        { status: 502 } // microservice failure → 502, not our own 500
+      )
     }
     
     const result = await response.json()
