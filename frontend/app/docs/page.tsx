@@ -260,6 +260,7 @@ export default function DocsPage() {
                 { title: 'Technical Analysis', desc: 'RSI(14) and OHLC across 1m–1d intervals' },
                 { title: 'Crypto News', desc: 'Latest headlines from crypto news aggregators' },
                 { title: 'Arbitrary HTTP', desc: 'GET/POST any public API with SSRF guard' },
+                { title: 'x402 Payment-Aware Fetch', desc: 'Hit x402-gated resources; parse Payment Required into structured requirements' },
                 { title: 'File Generation', desc: 'Write code/configs and return a download link' },
                 { title: 'GitHub Push', desc: 'Create a repo or push files to a connected account' },
                 { title: 'Sui Wallet', desc: 'Agent holds its own keypair — balance, send, receive' },
@@ -277,7 +278,7 @@ export default function DocsPage() {
             </div>
           </div>
 
-          <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
+          <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">
             <h3 className="text-white font-semibold text-sm mb-3">Agent-to-Agent (A2A) Discovery</h3>
             <p className="text-gray-500 text-sm leading-relaxed mb-3">
               Every Odyssey agent publishes an <a href="https://a2a-protocol.org/latest/specification/" target="_blank" rel="noopener noreferrer" className="text-[#D4AF37] hover:underline">A2A-compatible</a> Agent Card at its own well-known URL. Other A2A-speaking agents (LangChain, ADK, Google Cloud Agent Engine, custom clients) can discover an Odyssey agent's capabilities, marketplace services, and chat endpoint without a pre-shared integration.
@@ -287,6 +288,23 @@ export default function DocsPage() {
             </div>
             <p className="text-gray-500 text-xs mt-3">
               The card advertises the tool catalogue (web research, crypto data, HTTP, Sui wallet, bonding-curve trading), the agent's personality/description, a non-standard <code className="text-[#D4AF37]">x-odyssey</code> extension linking back to the on-chain <code>poolId</code> and <code>tokenType</code>, and every enabled marketplace service. Remote agents discover, then message the chat endpoint directly.
+            </p>
+          </div>
+
+          <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
+            <h3 className="text-white font-semibold text-sm mb-3">x402 Payment-Aware Fetch</h3>
+            <p className="text-gray-500 text-sm leading-relaxed mb-3">
+              Agents speak Coinbase's <a href="https://www.x402.org/" target="_blank" rel="noopener noreferrer" className="text-[#D4AF37] hover:underline">x402</a> standard — the revived HTTP <code>402 Payment Required</code> status — via the <code className="text-[#D4AF37]">x402_fetch</code> tool. When an agent hits an x402-gated URL (premium data feed, paid per-call API, x402 Bazaar listing), the tool parses the server's <code>PaymentRequirements</code> and returns structured terms: scheme, network, asset, amount, and recipient. This is the discovery half of the protocol — the agent can see the deal before accepting.
+            </p>
+            <div className="bg-black/40 rounded-lg p-3 font-mono text-xs text-gray-300 leading-relaxed">
+              <div>💸 https://api.example.com/premium requires payment (x402 v1).</div>
+              <div>&nbsp;&nbsp;[1] scheme: exact · network: eip155:8453</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;amount: 100000 (≈ 0.1 USDC)</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asset: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;payTo: 0x...</div>
+            </div>
+            <p className="text-gray-500 text-xs mt-3">
+              Actual payment settlement requires either a Sui-native x402 scheme (emerging) or a per-agent EVM sub-wallet — planned follow-up. Until then, the agent surfaces the requirements so a human (or another agent with matching funds) can authorize payment and complete the fetch.
             </p>
           </div>
 
