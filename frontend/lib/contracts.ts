@@ -104,15 +104,34 @@ export const MOONBAGS_CONTRACT_V13: MoonbagsContract = {
 // v13-only objects not present on V12: ThresholdConfig + admin caps.
 export const MOONBAGS_V13_THRESHOLD_CONFIG = '0x5d4f11d9df72753373055f9a2151fa50305efe8405b0025cddd0513fbbadc2be'
 
-// Default target for NEW SUI-pair pool creation. V13 enables the
-// Cetus/Turbos DEX selector; V12_PREV/V12 pools still route via
-// getMoonbagsContractForPackage for reads/writes against existing pools.
-export const MOONBAGS_CONTRACT: MoonbagsContract = MOONBAGS_CONTRACT_V13
+// ── Moonbags Launchpad v14 — 2026-04-23 republish with setter fee ──
+// Supersedes V13 with two changes: pool_creation_fee is now a field on
+// Configuration (mutable at runtime via setter_pool_creation_fee admin
+// fn, ported from the AIDA fork), and the launch fee was raised from
+// 0.01 SUI → 1 SUI at init time. Tx signature of create_*_with_fee is
+// unchanged from V13 — same args, same order. Future fee tuning no
+// longer requires a republish; admin just calls the setter.
+// Publish TX: GQotR9VJJ9f9SmzxEE9qQ3SWmnkX8Yz7345oKcW8WYvp
+export const MOONBAGS_CONTRACT_V14: MoonbagsContract = {
+  packageId:     '0xd58106acf43da3ed75dbe6eef4603207a701ea6df659ed07c005bb517cfcc995',
+  module:        'moonbags',
+  configuration: '0x4eb8300e6f0d5f45311fba19f19e0bc765c9733a8508f7fa1410b649d6dc1ae2',
+  stakeConfig:   '0xe4e6fccec3e806dd7e1993eb11c1bff33b2c5c12474baa84890224cd525f35f9',
+  lockConfig:    '0xedec57e3ededef90fe4df54b8308804c39ddd5b9dc016fac356ebfeb8dcfb58c',
+  tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
+}
+export const MOONBAGS_V14_THRESHOLD_CONFIG = '0xea8d4fb0bea0e2846c69cb2e6b92acd0ecda6b375cce04556e7b4f56d37bdd35'
+
+// Default target for NEW SUI-pair pool creation. V14 has admin-settable
+// fee + Cetus auto-migration; V13 pools stay routed to V13 bundle via
+// getMoonbagsContractForPackage for reads/writes.
+export const MOONBAGS_CONTRACT: MoonbagsContract = MOONBAGS_CONTRACT_V14
 
 // All Moonbags packages we know about (current V12 + previous V12 + V11
 // + legacy chain). Used to fan out event queries across every publish era
 // so tokens from any of them show up in the UI.
 export const MOONBAGS_KNOWN_PACKAGES: readonly string[] = [
+  MOONBAGS_CONTRACT_V14.packageId,
   MOONBAGS_CONTRACT_V13.packageId,
   MOONBAGS_CONTRACT_V12.packageId,
   MOONBAGS_CONTRACT_V12_PREV.packageId,
@@ -128,7 +147,7 @@ export const MOONBAGS_KNOWN_PACKAGES: readonly string[] = [
  * the pool's `bonding_curve_config` actually references.
  */
 export function getMoonbagsContractForPackage(packageId?: string | null): MoonbagsContract {
-  if (!packageId) return MOONBAGS_CONTRACT_V13
+  if (!packageId) return MOONBAGS_CONTRACT_V14
   const normalized = packageId.startsWith('0x') ? packageId.toLowerCase() : `0x${packageId.toLowerCase()}`
 
   // AIDA-fork routing — each AIDA publish has its own shared objects,
@@ -140,7 +159,10 @@ export function getMoonbagsContractForPackage(packageId?: string | null): Moonba
   if (normalized === MOONBAGS_AIDA_CONTRACT_V2.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT_V2
   if (normalized === MOONBAGS_AIDA_CONTRACT_PREV.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT_PREV
 
-  // V13 (2026-04-23 republish): first publish with Cetus/Turbos DEX selector.
+  // V14 (2026-04-23 republish): admin-settable fee + Cetus auto-migration.
+  if (normalized === MOONBAGS_CONTRACT_V14.packageId.toLowerCase()) return MOONBAGS_CONTRACT_V14
+
+  // V13 (2026-04-23 original publish): Cetus auto-migration, hardcoded 0.01 SUI fee.
   if (normalized === MOONBAGS_CONTRACT_V13.packageId.toLowerCase()) return MOONBAGS_CONTRACT_V13
 
   // V12 (2026-04-21 republish): admin-settable creation fee, no DEX selector.
@@ -158,7 +180,7 @@ export function getMoonbagsContractForPackage(packageId?: string | null): Moonba
   if (MOONBAGS_LEGACY_PACKAGE_IDS.some(p => p.toLowerCase() === normalized)) {
     return MOONBAGS_CONTRACT_LEGACY
   }
-  return MOONBAGS_CONTRACT_V13
+  return MOONBAGS_CONTRACT_V14
 }
 
 // ── Cetus DEX objects (verified on mainnet) ─────────────────

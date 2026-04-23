@@ -10,7 +10,7 @@ import { Transaction } from '@mysten/sui/transactions'
 import { bcs } from '@mysten/sui/bcs'
 import { Rocket, Upload, Globe, Twitter, MessageCircle, Video, Loader2, CheckCircle } from 'lucide-react'
 import axios from 'axios'
-import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V13, CETUS_CONTRACT, SUI_METADATA_ID, BACKEND_URL, SUI_CLOCK } from '@/lib/contracts';
+import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V14, CETUS_CONTRACT, SUI_METADATA_ID, BACKEND_URL, SUI_CLOCK } from '@/lib/contracts';
 import { MOONBAGS_AIDA_CONTRACT, MOONBAGS_AIDA_CONTRACT_V3, AIDA_COIN_TYPE, AIDA_METADATA_ID } from '@/lib/contracts_aida'
 
 // ── Constants ─────────────────────────────────────────────────
@@ -135,7 +135,7 @@ export default function CreateTokenPage() {
     const isAida = pairType === 'AIDA'
     const configId = isAida
       ? MOONBAGS_AIDA_CONTRACT.configuration
-      : MOONBAGS_CONTRACT_V13.configuration
+      : MOONBAGS_CONTRACT_V14.configuration
     const fallback = isAida ? DEFAULT_FEE_AIDA_MIST : DEFAULT_FEE_SUI_MIST
     let cancelled = false
     setCreationFeeMist(null) // show loading until the new value lands
@@ -446,7 +446,7 @@ export default function CreateTokenPage() {
       // no DEX selector yet — graduation is admin-managed until AIDA fork
       // is republished with bonding_dex support).
       // SUI pairs use V13 which has Cetus/Turbos auto-migration wired in.
-      const contract = isAidaPair ? MOONBAGS_AIDA_CONTRACT : MOONBAGS_CONTRACT_V13
+      const contract = isAidaPair ? MOONBAGS_AIDA_CONTRACT : MOONBAGS_CONTRACT_V14
 
       // Warn if AIDA contract not yet deployed
       if (isAidaPair && contract.packageId === '0x0000000000000000000000000000000000000000000000000000000000000000') {
