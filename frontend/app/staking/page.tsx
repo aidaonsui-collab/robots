@@ -131,10 +131,14 @@ const AIDA_PAIR_STK_CFG = MOONBAGS_AIDA_CONTRACT.stakeConfig
 // version assertion. Used to route stake/unstake/claim writes to the
 // bundle where the user's position actually lives.
 const AIDA_PAIR_CFG_TO_PKG: Record<string, string> = {
-  // V2 — 2026-04-21 republish with admin setter
+  // V2 — 2026-04-21 republish with admin setter, upgraded 2026-04-23 to
+  // version 2 (0x7555b1da…) adding `init_cetus_aida_pool`. Move calls
+  // must target the upgraded package; events still match the original id.
   '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09':
-    '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313',
-  // V3 — 2026-04-23 republish with Cetus auto-migration
+    '0x7555b1da30fa1e0d355d18a129b2aafc92c6c9a4529e4d64ff90a2d5e692240f',
+  // V3 — 2026-04-23 fresh publish (superseded by the V2 upgrade above;
+  // kept here for any wallet that staked on V3 between its publish and
+  // the upgrade, so their stake surface still unstakes cleanly).
   '0xf87f6cdd86ede677b85e8eb85e8b2ce856b348e4aad6c08c0d4ef3fbe2d1dcbb':
     '0x69079609ad446344ec8114b9466e04e9210daae60c9289e72037bc5e8cd54a3c',
   // PREV — 2026-04-18 original AIDA-fork publish
