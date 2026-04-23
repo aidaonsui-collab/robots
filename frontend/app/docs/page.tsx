@@ -8,15 +8,7 @@ import {
 } from 'lucide-react'
 
 // ── Contract references ─────────────────────────────────────
-const CONTRACTS = {
-  'AIDA Token':             '0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA',
-  'Moonbags SUI V14 (pkg)': '0xd58106acf43da3ed75dbe6eef4603207a701ea6df659ed07c005bb517cfcc995',
-  'SUI V14 Configuration':  '0x4eb8300e6f0d5f45311fba19f19e0bc765c9733a8508f7fa1410b649d6dc1ae2',
-  'Moonbags AIDA V5 (pkg)': '0x23e754414a8e5b26b0c16f16afed69bd90560dc184b466f58045ceb64a7e43c0',
-  'AIDA V2 Configuration':  '0x1b08a4a16024a7456e3c42449daec1dc8cbe130e24d6a6c37482e4fd2293b60f',
-  'AIDA Staking Pool':      '0x2b7c1b42426abdc1ece2cea3f564e32b7809cdcebc87d08fa56b440d9eb5c3d4',
-  'Bluefin AIDA/SUI Pool':  '0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b',
-}
+// (Contract addresses are intentionally not listed on the public docs page.)
 
 const SKILLS_REPO = 'https://github.com/aidaonsui-collab/odyssey-agent-skills'
 
@@ -28,7 +20,7 @@ const SECTIONS = [
   { id: 'ai-agents', label: 'AI Agents', icon: Bot },
   { id: 'agent-skills', label: 'Agent Skills', icon: GitBranch },
   { id: 'staking', label: 'Staking', icon: Coins },
-  { id: 'contracts', label: 'Contracts', icon: Shield },
+  { id: 'network', label: 'Network', icon: Shield },
 ]
 
 function SideNav({ active }: { active: string }) {
@@ -210,7 +202,7 @@ export default function DocsPage() {
               <StepCard step={1} title="Create a Presale" desc="Go to Olympus > Create Presale. Set your token name, fixed price per token, min/max raise targets, duration, and token distribution split (presale / liquidity / creator %)." />
               <StepCard step={2} title="Contribution Period" desc="Once the presale starts, users can contribute SUI at the fixed price. There's an optional max-per-wallet cap to prevent whales. A 2% platform fee is taken on each contribution." />
               <StepCard step={3} title="Finalization" desc="After the end time, anyone can call finalize. If min raise is met, the presale succeeds — contributors can claim tokens. If not, the presale fails and everyone gets a full SUI refund." />
-              <StepCard step={4} title="DEX Migration" desc="On success, the admin withdraws the liquidity allocation and SUI raised to create a Momentum DEX pool. The token transitions to open-market trading." />
+              <StepCard step={4} title="DEX Migration" desc="On success, the admin withdraws the liquidity allocation and SUI raised to create a Cetus CLMM pool. The token transitions to open-market trading and the LP position is burned." />
             </div>
           </div>
 
@@ -221,7 +213,7 @@ export default function DocsPage() {
             <InfoRow label="Fee Recipient" value="Treasury wallet" />
             <InfoRow label="Token Distribution" value="Configurable — presale / liquidity / creator BPS" />
             <InfoRow label="Refunds" value="Full refund if presale fails (min raise not met)" />
-            <InfoRow label="DEX Migration" value="Momentum CLMM (automatic)" />
+            <InfoRow label="DEX Migration" value="Cetus CLMM (automatic)" />
           </div>
 
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
@@ -374,31 +366,13 @@ export default function DocsPage() {
             </div>
           </div>
 
-          {/* ═══ CONTRACTS ═══ */}
+          {/* ═══ NETWORK ═══ */}
           <SectionHeader
-            id="contracts"
+            id="network"
             icon={Shield}
-            title="Contract Addresses"
-            subtitle="Verified on-chain addresses for Sui mainnet."
+            title="Network"
+            subtitle="Everything runs on Sui mainnet."
           />
-
-          <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-6">
-            <div className="space-y-3">
-              {Object.entries(CONTRACTS).map(([label, addr]) => (
-                <div key={label} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                  <span className="text-gray-500 text-sm w-48 flex-shrink-0">{label}</span>
-                  <a
-                    href={`https://suiscan.xyz/mainnet/object/${addr.split('::')[0]}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#D4AF37] text-xs font-mono break-all hover:underline"
-                  >
-                    {addr}
-                  </a>
-                </div>
-              ))}
-            </div>
-          </div>
 
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
             <h3 className="text-white font-semibold text-sm mb-3">Network Info</h3>
@@ -406,7 +380,7 @@ export default function DocsPage() {
             <InfoRow label="RPC" value="https://fullnode.mainnet.sui.io" />
             <InfoRow label="Bonding Curve Module" value="moonbags" />
             <InfoRow label="Presale Module" value="presale" />
-            <InfoRow label="Migration Target" value="Cetus CLMM (bonding curve) · Momentum (presale)" />
+            <InfoRow label="Migration Target" value="Cetus CLMM" />
           </div>
 
           {/* Footer */}
