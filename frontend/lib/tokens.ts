@@ -481,6 +481,17 @@ const HIDDEN_TOKENS = new Set([
   '0x5b5d441190e4fb43735f23dbc4b329c96e996a0beb53a5993a6e052e3adbf83e::shine::SHINE',                   // SHINE
   '0xcf7eeb3d4fc53529996e8903e739cb703528e9b60dd07405b2a3d65afb29d3ee::nav::NAV',                       // NAV
   '0x77b8fd2ad820cc3602c7d81e36e5a19e6c7af584d5a5dffb9b47a705b1d64fba::suixseven::SUIXSEVEN',           // SUIXSEVEN (test launch)
+  '0x600cadec5c80e8bfe3d5d0823a2ca7bb9b2c1ba6d422763cb1f1b98e7b6cf8ec::fym::FYM',
+  '0xd7a3fdf8c6e4bb7625fdb6fbbaaa28557fd9deeb55ef77aaebcab3f12a2cc156::nrdac::NRDAC',
+  '0xac79fcb64b6811791450242436cf2da244d29e364f3b9eb93128610c5c4394e4::fbt::FBT',
+  '0x639b32dfd2ce83b9218343caa7164c21ade89f886dcc98d14d15ff4a74679fc8::sxbt::SXBT',
+  '0xb49de3fd424e6d4ebb96ade8b30e150a29d17bb8a841239129a3ab1c708f6751::tstc::TSTC',
+  '0x2a90398d315ab871a0ebfa610d3d8b2a45236c2f7bbe9191276556572079086a::dhrtlmrt::DHRTLMRT',
+  '0x508abe5fb919bf276eab41eceada797dbb61d57254258ab26499d05e3990170f::guy::GUY',
+  '0x2dca63e8c5d1b60e0c940f406f1e4d2429d083964c44c9722815cbc3eeab7a25::ball::BALL',
+  '0xeeb0e41bd5d8525020065a50c811b42a001547a720419e230612404951639009::fo100sb::FO100SB',
+  '0x3321c0c105d58208bc7916594b889137c9f86abb79401be7e68db972ec7e4eed::fbtts::FBTTS',
+  '0x286576735b5751251f62ab6e35a34230601a825dc85e2625701baf5db6ca23eb::flbt::FLBT',
   // Spam / abusive names
   '0x79d820e01cb8e14feded3002dca8a89643bca25ea7adb9c53e5b288f4266c9de::fuck::FUCK',
   '0x3197fc9b14ae9f468805e23f5aa679e78ae68e9e71c3570677f9e7a40dd39557::texmother::TEXMOTHER',
