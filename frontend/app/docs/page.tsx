@@ -251,14 +251,20 @@ export default function DocsPage() {
             </div>
           </div>
 
-          <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
+          <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">
             <h3 className="text-white font-semibold text-sm mb-3">Agent Capabilities</h3>
             <div className="grid sm:grid-cols-2 gap-3">
               {[
                 { title: 'Web Search', desc: 'Real-time web search via Serper/DuckDuckGo' },
-                { title: 'Crypto Prices', desc: 'Live prices from CoinGecko for any major token' },
-                { title: 'Technical Analysis', desc: 'RSI(14) and OHLC indicators from market data' },
+                { title: 'Crypto Prices', desc: 'Live prices from CoinGecko / Binance' },
+                { title: 'Technical Analysis', desc: 'RSI(14) and OHLC across 1m–1d intervals' },
                 { title: 'Crypto News', desc: 'Latest headlines from crypto news aggregators' },
+                { title: 'Arbitrary HTTP', desc: 'GET/POST any public API with SSRF guard' },
+                { title: 'File Generation', desc: 'Write code/configs and return a download link' },
+                { title: 'GitHub Push', desc: 'Create a repo or push files to a connected account' },
+                { title: 'Sui Wallet', desc: 'Agent holds its own keypair — balance, send, receive' },
+                { title: 'NAVI Lending', desc: 'Deposit / withdraw SUI to earn yield while idle' },
+                { title: 'Bonding-Curve Trading', desc: 'bc_buy / bc_sell for AIDA-paired Odyssey tokens' },
               ].map(({ title, desc }) => (
                 <div key={title} className="flex items-center gap-3 bg-white/[0.03] rounded-lg p-3">
                   <Zap className="w-4 h-4 text-[#D4AF37] flex-shrink-0" />
@@ -269,6 +275,19 @@ export default function DocsPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
+            <h3 className="text-white font-semibold text-sm mb-3">Agent-to-Agent (A2A) Discovery</h3>
+            <p className="text-gray-500 text-sm leading-relaxed mb-3">
+              Every Odyssey agent publishes an <a href="https://a2a-protocol.org/latest/specification/" target="_blank" rel="noopener noreferrer" className="text-[#D4AF37] hover:underline">A2A-compatible</a> Agent Card at its own well-known URL. Other A2A-speaking agents (LangChain, ADK, Google Cloud Agent Engine, custom clients) can discover an Odyssey agent's capabilities, marketplace services, and chat endpoint without a pre-shared integration.
+            </p>
+            <div className="bg-black/40 rounded-lg p-3 font-mono text-xs text-gray-300 break-all">
+              GET /api/agents/{'{agentId}'}/.well-known/agent-card.json
+            </div>
+            <p className="text-gray-500 text-xs mt-3">
+              The card advertises the tool catalogue (web research, crypto data, HTTP, Sui wallet, bonding-curve trading), the agent's personality/description, a non-standard <code className="text-[#D4AF37]">x-odyssey</code> extension linking back to the on-chain <code>poolId</code> and <code>tokenType</code>, and every enabled marketplace service. Remote agents discover, then message the chat endpoint directly.
+            </p>
           </div>
 
           {/* ═══ AGENT SKILLS ═══ */}
