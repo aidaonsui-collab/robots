@@ -85,6 +85,9 @@ function StakingPageInner() {
   const [loading, setLoading]           = useState(false)
   const [statusMsg, setStatusMsg]       = useState('')
   const [stakedAmount, setStakedAmount] = useState('')
+  const [stakedAmountPair, setStakedAmountPair] = useState('')
+  const [loadingPair, setLoadingPair] = useState(false)
+  const [aidaPairPoolExists, setAidaPairPoolExists] = useState<boolean | null>(null)
 
   // On-chain state
   const [aidaBalance, setAidaBalance]   = useState(0)
@@ -238,6 +241,7 @@ function StakingPageInner() {
         p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
       )
       if (!aidaPool) {
+        setAidaPairPoolExists(false)
         setAidaPairPoolId(null)
         setAidaPairRewards(0)
         setAidaPairEarned(BigInt(0))
@@ -246,6 +250,7 @@ function StakingPageInner() {
         setAidaPairPoolIdx(BigInt(0))
         return
       }
+      setAidaPairPoolExists(true)
       setAidaPairPoolId(aidaPool.objectId)
 
       const [stakerField, poolObj] = await Promise.all([
@@ -529,6 +534,88 @@ function StakingPageInner() {
       setStatusMsg('Error: ' + e.message)
     }
     setClaimingAidaPair(false)
+  }
+
+  // ── AIDA-pair pool: init / stake / unstake ──────────────────────────────
+  // Mirrors the legacy pool handlers but targets AIDA_PAIR_PKG + AIDA_PAIR_STK_CFG.
+  // Stakers in this pool earn AIDA from AIDA-paired token trading fees.
+  const handleInitAidaPairPool = async () => {
+    if (!connected) return alert('Connect wallet first')
+    setLoadingPair(true)
+    setStatusMsg('Initializing AIDA-pair pool...')
+    try {
+      const tx = new Transaction()
+      tx.moveCall({
+        target: `${AIDA_PAIR_PKG}::moonbags_stake::initialize_staking_pool`,
+        typeArguments: [AIDA_TYPE],
+        arguments: [tx.object(AIDA_PAIR_STK_CFG), tx.object(SUI_CLOCK)],
+      })
+      await signAndExecute({ transaction: tx })
+      setStatusMsg('AIDA-pair pool initialized!')
+      setTimeout(() => fetchAidaPairRewards(), 2000)
+    } catch (e: any) {
+      setStatusMsg('Error: ' + e.message)
+    }
+    setLoadingPair(false)
+  }
+
+  const handleStakeAidaPair = async () => {
+    if (!connected || !address) return alert('Connect wallet first')
+    if (!stakedAmountPair || parseFloat(stakedAmountPair) <= 0) return alert('Enter amount')
+    if (parseFloat(stakedAmountPair) > aidaBalance) return alert('Insufficient balance')
+    if (!aidaPairPoolExists) return alert('AIDA-pair pool not initialized yet')
+
+    setLoadingPair(true)
+    setStatusMsg('Staking in AIDA-pair pool...')
+    try {
+      const coinsRes = await rpc('suix_getCoins', [address, AIDA_TYPE, null, 5])
+      const coins = coinsRes?.data ?? []
+      if (!coins.length) throw new Error('No AIDA coins found')
+
+      const amountMist = BigInt(Math.floor(parseFloat(stakedAmountPair) * 1e9))
+      const tx = new Transaction()
+      const primary = tx.object(coins[0].coinObjectId)
+      if (coins.length > 1) {
+        tx.mergeCoins(primary, coins.slice(1).map((c: any) => tx.object(c.coinObjectId)))
+      }
+      const [stakeCoin] = tx.splitCoins(primary, [amountMist])
+      tx.moveCall({
+        target: `${AIDA_PAIR_PKG}::moonbags_stake::stake`,
+        typeArguments: [AIDA_TYPE],
+        arguments: [tx.object(AIDA_PAIR_STK_CFG), stakeCoin, tx.object(SUI_CLOCK)],
+      })
+      await signAndExecute({ transaction: tx })
+      setStatusMsg('Staked in AIDA-pair pool!')
+      setStakedAmountPair('')
+      setTimeout(() => { fetchAllBalances(); fetchAidaPairRewards() }, 2000)
+    } catch (e: any) {
+      setStatusMsg('Error: ' + e.message)
+    }
+    setLoadingPair(false)
+  }
+
+  const handleUnstakeAidaPair = async () => {
+    if (!connected || !address || aidaPairStakerBal <= 0n) return
+    setLoadingPair(true)
+    setStatusMsg('Unstaking from AIDA-pair pool...')
+    try {
+      const tx = new Transaction()
+      tx.moveCall({
+        target: `${AIDA_PAIR_PKG}::moonbags_stake::unstake`,
+        typeArguments: [AIDA_TYPE],
+        arguments: [
+          tx.object(AIDA_PAIR_STK_CFG),
+          tx.pure.u64(aidaPairStakerBal),
+          tx.object(SUI_CLOCK),
+        ],
+      })
+      await signAndExecute({ transaction: tx })
+      setStatusMsg('Unstaked!')
+      setTimeout(() => { fetchAllBalances(); fetchAidaPairRewards() }, 2000)
+    } catch (e: any) {
+      setStatusMsg('Error: ' + e.message)
+    }
+    setLoadingPair(false)
   }
 
   // Fetch the current NAVI ProtocolPackage ID dynamically — NAVI upgrades their
@@ -879,8 +966,11 @@ function StakingPageInner() {
               <Coins className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-[#D4AF37]">$AIDA Staking</h2>
-              <p className="text-muted-foreground text-sm">Earn 30% of platform trading fees in SUI</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-2xl font-bold text-[#D4AF37]">$AIDA Staking</h2>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">SUI-pair rewards</span>
+              </div>
+              <p className="text-muted-foreground text-sm">Earn 30% of SUI-pair trading fees in SUI</p>
             </div>
           </div>
 
@@ -1002,20 +1092,7 @@ function StakingPageInner() {
               Claim {liveRewards.toFixed(6)} SUI
             </button>
           </div>
-          {/* AIDA claim — shown whenever a position exists on the AIDA-pair
-              config. Hidden entirely if no pool is set up yet to avoid
-              confusing users who only care about the SUI side. */}
-          {(aidaPairRewards > 0 || aidaPairEarned > 0n || aidaPairStakerBal > 0n) && (
-            <button
-              onClick={handleClaimAidaPair}
-              disabled={claimingAidaPair || (aidaPairEarned <= 0n && aidaPairRewards <= 0)}
-              className="w-full mb-3 py-3 bg-[#D4AF37]/15 border border-[#D4AF37]/30 rounded-xl text-[#D4AF37] font-semibold flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-[#D4AF37]/25 transition-colors"
-            >
-              {claimingAidaPair ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
-              Claim {aidaPairRewards.toFixed(6)} AIDA
-              <span className="text-xs opacity-70">(from AIDA pairs)</span>
-            </button>
-          )}
+          {/* AIDA-pair rewards moved to their own pool card below this one. */}
           <button
             onClick={handleClaimAndDeposit}
             disabled={naviLoading || (stakerEarned <= 0n && liveRewards <= 0)}
@@ -1226,6 +1303,95 @@ function StakingPageInner() {
             )}
           </div>
 
+        </div>
+
+        {/* ── AIDA-Pair Pool (pool 2 of 2) ──────────────────────────────────
+            Same design language as the main card above, but compact.
+            Stakers here earn AIDA (not SUI) from AIDA-paired token trades
+            like NUT. Separate pool because the on-chain reward coin type
+            differs between the SUI-pair legacy chain (Coin<SUI>) and the
+            AIDA-pair fork (Coin<AIDA>). */}
+        <div className="bg-card border border-[#D4AF37]/20 rounded-2xl p-5 mb-8">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/60 to-[#FFD700]/40 flex items-center justify-center shrink-0">
+                <Coins className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-lg font-bold text-[#D4AF37]">$AIDA Staking</h3>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25">AIDA-pair rewards</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Earn AIDA from AIDA-paired token trading fees</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 text-right">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Your stake</div>
+                <div className="text-base font-bold tabular-nums">
+                  {(Number(aidaPairStakerBal) / 1e9).toFixed(2)} <span className="text-xs font-normal text-muted-foreground">AIDA</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Pending</div>
+                <div className="text-base font-bold tabular-nums text-[#D4AF37]">
+                  {aidaPairRewards.toFixed(4)} <span className="text-xs font-normal text-muted-foreground">AIDA</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {aidaPairPoolExists === false ? (
+            <button
+              onClick={handleInitAidaPairPool}
+              disabled={loadingPair || !connected}
+              className="w-full py-2.5 bg-yellow-500/15 border border-yellow-500/30 rounded-xl text-yellow-400 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loadingPair ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Initialize AIDA-pair pool (one-time, anyone can do it)
+            </button>
+          ) : (
+            <div className="flex gap-2 flex-wrap">
+              <div className="flex-1 min-w-[200px] flex gap-2">
+                <input
+                  type="number"
+                  placeholder="Amount to stake"
+                  value={stakedAmountPair}
+                  onChange={(e) => setStakedAmountPair(e.target.value)}
+                  className="flex-1 bg-background/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]/50"
+                />
+                <button
+                  onClick={() => setStakedAmountPair(aidaBalance.toString())}
+                  className="px-3 py-2 text-xs bg-white/5 border border-white/10 rounded-xl hover:bg-white/10"
+                >
+                  Max
+                </button>
+              </div>
+              <button
+                onClick={handleStakeAidaPair}
+                disabled={loadingPair || !connected || !stakedAmountPair}
+                className="px-4 py-2 bg-[#D4AF37] text-black rounded-xl text-sm font-bold disabled:opacity-50 flex items-center gap-2"
+              >
+                {loadingPair ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Stake
+              </button>
+              <button
+                onClick={handleUnstakeAidaPair}
+                disabled={loadingPair || aidaPairStakerBal <= 0n}
+                className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-semibold disabled:opacity-50"
+              >
+                Unstake
+              </button>
+              <button
+                onClick={handleClaimAidaPair}
+                disabled={claimingAidaPair || (aidaPairRewards <= 0 && aidaPairEarned <= 0n)}
+                className="px-4 py-2 bg-[#D4AF37]/15 border border-[#D4AF37]/30 rounded-xl text-[#D4AF37] text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+              >
+                {claimingAidaPair ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
+                Claim
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="text-center text-xs text-gray-500">
