@@ -2,10 +2,22 @@
 // AIDA-Paired Bonding Curve Contract (robots repo)
 // Fork of Odyssey Moonbags — quote token changed from SUI → AIDA
 //
-// Published: 2026-04-22 (v2)
-// Package: 0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313
-// TX: FiJ2byM6yYexgRcSRUBjSAZZB9faHWfwMtJAdbADQEyq (setter tested OK)
+// Originally published 2026-04-21 at 0x593a2e87… (v2, admin-settable fee).
+// Upgraded 2026-04-23 → 0x7555b1da… (version 2) to add
+// `init_cetus_aida_pool` — the admin-callable Cetus auto-migration entry
+// mirrored from the SUI fork's `init_cetus_pool`. Shared objects
+// (Configuration / stakeConfig / lockConfig / ThresholdConfig / AdminCap)
+// carry over unchanged from the original publish.
+//
+// TX: FiJ2byM6yYexgRcSRUBjSAZZB9faHWfwMtJAdbADQEyq (setter tested OK, v1)
+// Upgrade TX: BirEZbASPtAVEUFzGVURfoFJEvWFmssEPkjx6rmDV8to (v2, Cetus)
 // Modules: curves, moonbags, moonbags_stake, moonbags_token_lock, utils
+//
+// NOTE: Event types continue to carry the original package ID
+// 0x593a2e87… even after the upgrade, because Sui anchors event type
+// signatures to the `original-id` not the per-upgrade versioned ID.
+// Anything doing `suix_queryEvents { MoveEventType: "<pkg>::moonbags::…" }`
+// must keep using 0x593a2e87…; move-call targets use 0x7555b1da….
 //
 // AIDA coin: 0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA
 // Bluefin AIDA/SUI pool: 0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b
@@ -20,8 +32,15 @@ export interface MoonbagsContract {
   tokenRegistry: string
 }
 
+// The original V2 package ID — kept around for event filtering (see note
+// above). Anything that calls `suix_queryEvents` / `sui_getEvents` on an
+// AIDA-pair module type should use this, not the upgraded package ID.
+export const MOONBAGS_AIDA_V2_ORIGINAL_PKG = '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313'
+
 export const MOONBAGS_AIDA_CONTRACT_V2: MoonbagsContract = {
-  packageId:     '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313',
+  // Upgraded package (2026-04-23) — targets for all move calls. Shared
+  // objects below are untouched by the upgrade.
+  packageId:     '0x7555b1da30fa1e0d355d18a129b2aafc92c6c9a4529e4d64ff90a2d5e692240f',
   module:        'moonbags',
   configuration: '0x1b08a4a16024a7456e3c42449daec1dc8cbe130e24d6a6c37482e4fd2293b60f',
   stakeConfig:   '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09',
@@ -46,10 +65,13 @@ export const MOONBAGS_AIDA_CONTRACT_V3: MoonbagsContract = {
 // V3-only objects: threshold config + admin caps captured separately
 export const MOONBAGS_AIDA_V3_THRESHOLD_CONFIG = '0x22bcff035b6f31e019d6a2ea6a6e60b483b26f9b61eb59c659176e4c1374f9ff'
 
-// Default target for new AIDA-pair pool creation — points at V3 so the
-// Cetus/Turbos DEX selector is usable. Existing pools on V2 / PREV stay
-// on their original shared objects via getMoonbagsContractForPackage().
-export const MOONBAGS_AIDA_CONTRACT: MoonbagsContract = MOONBAGS_AIDA_CONTRACT_V3
+// Default target for new AIDA-pair pool creation — points at the
+// upgraded V2 (2026-04-23 upgrade added `init_cetus_aida_pool` for Cetus
+// auto-migration). V3 was a separate fresh publish that was superseded
+// by the V2 upgrade; it's kept in this file only so existing pools
+// launched under V3 can still be resolved via
+// `getMoonbagsContractForPackage`.
+export const MOONBAGS_AIDA_CONTRACT: MoonbagsContract = MOONBAGS_AIDA_CONTRACT_V2
 
 // Mainnet `CoinMetadata<AIDA>` object — passed to init_cetus_aida_pool
 // as the quote-coin metadata argument. Singleton on mainnet.
@@ -90,8 +112,9 @@ export type PairToken = 'SUI' | 'AIDA'
 export const AIDA_PAIR_PACKAGE_IDS: readonly string[] = [
   '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8', // 2026-04-18 publish
   '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f', // 2026-04-21 republish (stale bytecode, superseded)
-  '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // 2026-04-21 republish (v2, setter verified)
-  '0x69079609ad446344ec8114b9466e04e9210daae60c9289e72037bc5e8cd54a3c', // 2026-04-23 republish (v3, Cetus auto-migration)
+  '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // 2026-04-21 republish (v2 original-id; still appears in type strings)
+  '0x7555b1da30fa1e0d355d18a129b2aafc92c6c9a4529e4d64ff90a2d5e692240f', // 2026-04-23 upgrade of v2 (version 2, Cetus auto-migration)
+  '0x69079609ad446344ec8114b9466e04e9210daae60c9289e72037bc5e8cd54a3c', // 2026-04-23 fresh v3 (superseded by v2 upgrade above, left for legacy pools)
 ] as const
 
 // Given a moonbags package ID (from a pool's on-chain type), return the
