@@ -570,7 +570,7 @@ function InfoTab({ token, coinType, poolId, creatorAddress, connectedAddress, mo
 // ============================================
 // TAB: TRADE (Buy/Sell full panel)
 // ============================================
-function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof MOCK_TOKEN, poolData: PoolToken | null, pairType: string, onTradeSuccess?: () => void }) {
+function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof MOCK_TOKEN, poolData: PoolToken | null, pairType: string, onTradeSuccess?: (optimistic?: TradeRow) => void }) {
   if (poolData?.isCompleted) {
     return (
       <GraduatedTokenPanel
@@ -674,6 +674,12 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
     setTxSuccess(null)
     const tx = new Transaction()
 
+    // Optimistic row the caller can render the instant the tx lands —
+    // populated with predicted buy/sell amounts from the same curve math
+    // the contract uses, so the row matches the real TradedEventV2 once
+    // the indexer catches up.
+    let optimisticOutcome: { suiAmount: number; tokenAmount: number; price: number } | null = null
+
     if (mode === 'buy') {
       const amountInMist = BigInt(Math.floor(parseFloat(amount) * 1e9))
       const vSui = poolData.virtualSuiReserves
@@ -681,6 +687,14 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
       const tokensOut = vToken > 0n ? (vToken * amountInMist) / (vSui + amountInMist) : 1n
       const slipBps = BigInt(Math.round(slippage * 100))
       const minTokensOut = tokensOut * (10000n - slipBps) / 10000n
+
+      const suiSpent = Number(amountInMist) / 1e9
+      const tokensReceived = Number(tokensOut) / 1e6
+      optimisticOutcome = {
+        suiAmount: suiSpent,
+        tokenAmount: tokensReceived,
+        price: tokensReceived > 0 ? suiSpent / tokensReceived : 0,
+      }
 
       // Contract charges 2% fee (200 bps) — coin must cover amount_in + fee + buffer
       const coinAmount = amountInMist * 103n / 100n
@@ -768,6 +782,14 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
       const slipBps = BigInt(Math.round(slippage * 100))
       const minSuiOut = suiOutAfterFee * (10000n - slipBps) / 10000n
 
+      const tokensSold = Number(sellAmountBase) / 1e6
+      const suiReceived = Number(suiOutAfterFee) / 1e9
+      optimisticOutcome = {
+        suiAmount: suiReceived,
+        tokenAmount: tokensSold,
+        price: tokensSold > 0 ? suiReceived / tokensSold : 0,
+      }
+
       const coins = tokenCoinsData.data
       const primaryCoin = tx.object(coins[0].coinObjectId)
       if (coins.length > 1) {
@@ -822,7 +844,20 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
               // up the new balances.
               refetchBalance()
               refetchTokenCoins()
-              setTimeout(() => onTradeSuccess?.(), 3000)
+              // Optimistic insert: hand the just-confirmed trade to the
+              // parent so it appears in the txns tab + chart instantly,
+              // rather than waiting for the 5s poll to catch the event.
+              const optimisticRow: TradeRow | undefined = optimisticOutcome && address ? {
+                type: mode,
+                address: shortenAddr(address),
+                user: address,
+                suiAmount: optimisticOutcome.suiAmount,
+                tokenAmount: Math.round(optimisticOutcome.tokenAmount),
+                price: optimisticOutcome.price,
+                time: 'Just now',
+                txDigest: result.digest,
+              } : undefined
+              onTradeSuccess?.(optimisticRow)
               return
             }
             // Move-level abort — surface a useful message instead of "success"
@@ -1457,14 +1492,28 @@ export default function CoinPage() {
   // TradeTab reads poolData directly as prop, no need to pass pairType down.
   const pairType = poolData?.pairType ?? 'SUI'
 
-  const handleTradeSuccess = () => setRefetchCount(c => c + 1)
+  // Optimistic insert: prepend the user's just-landed trade so they see
+  // it instantly, then bump refetchCount so the next poll confirms/dedupes
+  // against the on-chain event. De-duped by txDigest when the event lands.
+  const handleTradeSuccess = useCallback((optimistic?: TradeRow) => {
+    if (optimistic) {
+      setTrades(prev => [optimistic, ...prev])
+      setPriceHistory(prev => [...prev, {
+        time: Date.now(),
+        value: optimistic.price,
+        isBuy: optimistic.type === 'buy',
+        suiAmount: optimistic.suiAmount,
+      }])
+    }
+    setRefetchCount(c => c + 1)
+  }, [])
 
   // Fetch real on-chain data
   useEffect(() => {
     if (!slug) return
     // Decode URL-encoded slug (e.g., %3A%3A -> ::)
     const decodedSlug = decodeURIComponent(slug)
-    
+
     if (refetchCount === 0) setLoading(true)
     Promise.all([fetchPoolToken(decodedSlug), fetchPoolTrades(decodedSlug)]).then(([tokenData, tradeData]) => {
       if (tokenData) setPoolData(tokenData)
@@ -1480,7 +1529,14 @@ export default function CoinPage() {
           time: formatTimeAgo(t.timestampMs),
           txDigest: t.txDigest || undefined,
         }))
-        setTrades([...mapped].reverse()) // newest first
+        // Preserve any optimistic rows whose digest hasn't shown up in the
+        // indexed event list yet — prevents the user's own trade from
+        // flickering out when the poll races the indexer.
+        setTrades(prev => {
+          const confirmedDigests = new Set(mapped.map(t => t.txDigest).filter(Boolean) as string[])
+          const unconfirmedOptimistic = prev.filter(t => t.txDigest && !confirmedDigests.has(t.txDigest))
+          return [...unconfirmedOptimistic, ...[...mapped].reverse()] // newest first
+        })
 
         // Build price history from trades (oldest first) — include volume/direction for chart
         const history: PricePoint[] = tradeData
@@ -1501,6 +1557,19 @@ export default function CoinPage() {
       setLoading(false)
     })
   }, [slug, refetchCount])
+
+  // Background poll: refetch trades every 5s while the tab is visible so
+  // other wallets' trades surface without a manual page refresh. Pauses
+  // when the tab is hidden to save RPC budget.
+  useEffect(() => {
+    if (!slug) return
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      setRefetchCount(c => c + 1)
+    }
+    const iv = setInterval(tick, 5_000)
+    return () => clearInterval(iv)
+  }, [slug])
 
   // Build token object: real data if available, fall back to mock
   const token = poolData ? {
