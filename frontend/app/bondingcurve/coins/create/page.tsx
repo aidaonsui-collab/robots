@@ -408,10 +408,23 @@ export default function CreateTokenPage() {
         }
       }
 
+      // `create_and_lock_first_buy_with_fee` takes `amount_out` as the
+      // DESIRED token count, not a slippage floor. The contract charges
+      // exactly the AIDA/SUI needed for that many tokens and refunds
+      // the remainder. Passing 95% of expected here caused 95% of the
+      // pair coin to be spent and ~5% refunded on every launch — so
+      // first-buys were silently doing a fraction of what users asked
+      // for. Pass the full expected amount (minus 1 mist for
+      // integer-division rounding) so the contract consumes the whole
+      // first-buy coin.
       const virtualSuiStart = targetRaiseMist / 3n  // threshold/3 with new config ratio
-      const minTokensOut: bigint = configSuiMist > 0n
-        ? (POOL_VIRTUAL_TOKEN * configSuiMist * 95n / 100n) / (virtualSuiStart + configSuiMist)
+      const expectedTokensOut: bigint = configSuiMist > 0n
+        ? (POOL_VIRTUAL_TOKEN * configSuiMist) / (virtualSuiStart + configSuiMist)
         : 1n
+      // Subtract 1 to absorb any rounding mismatch between JS bigint math
+      // and the on-chain u128 curve math. A 1-unit-over `amount_out`
+      // would abort with EInsufficientInput.
+      const amountOut: bigint = expectedTokensOut > 1n ? expectedTokensOut - 1n : expectedTokensOut
 
       if (!metaObjId) throw new Error('CoinMetadata object ID missing — please retry TX1')
       if (!capObjId)  throw new Error('TreasuryCap object ID missing — please retry TX1')
@@ -510,7 +523,7 @@ export default function CreateTokenPage() {
             tx2.object(capObjId),                            // 3  treasury_cap
             fee,                                             // 4  pool_creation_fee (Coin<AIDA>)
             firstBuy,                                        // 5  coin_sui (actually Coin<AIDA>)
-            tx2.pure.u64(minTokensOut),                      // 6  amount_out
+            tx2.pure.u64(amountOut),                         // 6  amount_out (exact tokens to buy)
             tx2.pure.u64(targetRaiseMist),                   // 7  threshold (plain u64)
             tx2.pure.u64(0),                                 // 8  locking_time_ms
             tx2.object(SUI_CLOCK),                           // 9  clock
@@ -536,7 +549,7 @@ export default function CreateTokenPage() {
             fee,                                             // pool_creation_fee
             tx2.pure.u8(bondingDex),                         // bonding_dex (0=Cetus, 1=Turbos)
             firstBuy,                                        // coin_sui
-            tx2.pure.u64(minTokensOut),                      // amount_out
+            tx2.pure.u64(amountOut),                         // amount_out (exact tokens to buy)
             tx2.pure.option('u64', targetRaiseMist),         // threshold: Option<u64>
             tx2.pure.u64(0),                                 // locking_time_ms
             tx2.object(SUI_CLOCK),                           // clock
