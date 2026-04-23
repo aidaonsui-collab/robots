@@ -355,14 +355,40 @@ export default function CreateTokenPage() {
         if (!address) throw new Error('Connect wallet')
         const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
         if (!aidaCoins.length) throw new Error('No AIDA coins found in wallet. Please acquire AIDA before creating an AIDA pair pool.')
-        const baseCoin = tx2.object(aidaCoins[0].coinObjectId)
-        for (let i = 1; i < aidaCoins.length; i++) {
-          tx2.moveCall({
-            target: '0x2::pay::join',
-            typeArguments: [AIDA_COIN_TYPE],
-            arguments: [baseCoin, tx2.object(aidaCoins[i].coinObjectId)],
-          })
+
+        // Pick the minimum set of AIDA coin objects that covers fee + firstBuy.
+        // Previously we merged every AIDA coin in the wallet, which made Slush
+        // display "Potential coin outflow" = entire wallet balance — even
+        // though only fee + firstBuy is actually spent. Taking just what we
+        // need caps the scary display at roughly what we're really charging.
+        const needed = feeMist + configSuiMist
+        const sorted = [...aidaCoins].sort((a, b) =>
+          Number(BigInt(b.balance) - BigInt(a.balance))
+        )
+        const selected: typeof aidaCoins = []
+        let accumulated = 0n
+        for (const c of sorted) {
+          selected.push(c)
+          accumulated += BigInt(c.balance)
+          if (accumulated >= needed) break
         }
+        if (accumulated < needed) {
+          throw new Error(
+            `Insufficient AIDA balance: need ${Number(needed) / 1e9} AIDA, have ${Number(accumulated) / 1e9}`
+          )
+        }
+
+        // Use the PTB's native mergeCoins primitive (not a pay::join moveCall)
+        // so Slush's tx analyzer can trace the balance flow and show an
+        // accurate outflow estimate instead of giving up on opaque moveCalls.
+        const baseCoin = tx2.object(selected[0].coinObjectId)
+        if (selected.length > 1) {
+          tx2.mergeCoins(
+            baseCoin,
+            selected.slice(1).map(c => tx2.object(c.coinObjectId))
+          )
+        }
+
         const [feeCoin] = tx2.splitCoins(baseCoin, [tx2.pure.u64(feeMist)])
         fee = feeCoin
         if (configSuiMist > 0n) {
@@ -705,8 +731,22 @@ export default function CreateTokenPage() {
               </div>
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-purple-500/20">
                 <span className="text-gray-500 text-sm">Deployment fee</span>
-                <span className="text-gray-300">1 SUI</span>
+                <span className="text-gray-300">{formatFee(creationFeeMist, pairType)}</span>
               </div>
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-purple-500/20">
+                <span className="text-gray-500 text-sm">Total you'll spend</span>
+                <span className="text-gray-300 font-semibold">
+                  {(configSuiVal + (creationFeeMist != null ? Number(creationFeeMist) / 1e9 : 0)).toLocaleString()} {pairType}
+                </span>
+              </div>
+              {pairType === 'AIDA' && (
+                <p className="text-[11px] text-gray-500 mt-2 leading-snug">
+                  Your wallet may display a larger "potential outflow" while it
+                  inspects the transaction — only the amount above is actually
+                  consumed. The remainder of the touched AIDA coin is returned
+                  to you in the same tx.
+                </p>
+              )}
             </div>
 
             {/* Graduation DEX — now shown for both SUI and AIDA pairs.
