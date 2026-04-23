@@ -97,7 +97,7 @@ export default function CreateTokenPage() {
   // LP burn, recommended). 1 = Turbos (falls back to admin-dump until
   // init_turbos_pool ships — phase 2).
   const [bondingDex, setBondingDex] = useState<0 | 1>(0)
-  const [targetRaise, setTargetRaise] = useState('2000')
+  const [targetRaise, setTargetRaise] = useState('1000')
   const [pairType, setPairType] = useState<PairType>('SUI')
   // Live wallet balance of whichever pair coin is currently selected.
   // Refetched whenever pairType flips or the wallet connects.
