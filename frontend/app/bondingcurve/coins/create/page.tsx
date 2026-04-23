@@ -93,7 +93,10 @@ export default function CreateTokenPage() {
   const [showPoolConfig, setShowPoolConfig] = useState(false)
   const [publishResult, setPublishResult] = useState<{tokenType: string, capObjId: string, metaObjId: string, pkgId: string} | null>(null)
   const [firstBuyAmount, setFirstBuyAmount] = useState('')
-  // Graduation always goes to Momentum CLMM (auto-migrated by cron)
+  // DEX routing for graduation. 0 = Cetus (automated on-chain pool creation +
+  // LP burn, recommended). 1 = Turbos (falls back to admin-dump until
+  // init_turbos_pool ships — phase 2).
+  const [bondingDex, setBondingDex] = useState<0 | 1>(0)
   const [targetRaise, setTargetRaise] = useState('2000')
   const [pairType, setPairType] = useState<PairType>('SUI')
 
@@ -440,6 +443,15 @@ export default function CreateTokenPage() {
       }
 
       // Create pool with metadata (moonbags for SUI, moonbags_aida for AIDA).
+      //
+      // === DEX MIGRATION (Cetus/Turbos) ================================
+      // When moonbags-contracts-sui is republished with bonding_dex support,
+      // swap the arguments list for the "DEX-AWARE" block below and update
+      // `contract.*` constants in lib/contracts*.ts to the new package IDs
+      // (Configuration, StakeConfig, LockConfig, and the Cetus shared
+      // objects: BurnManager / Pools / GlobalConfig, plus metadata_sui).
+      // The current code path works with the deployed (non-DEX-aware) fork.
+      // ================================================================
       tx2.moveCall({
         target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
         typeArguments: [tokenType],
@@ -464,6 +476,37 @@ export default function CreateTokenPage() {
           tx2.object(metaObjId),                               // metadata_token
         ],
       })
+      /* === DEX-AWARE ARGUMENTS — uncomment after moonbags republish ====
+      tx2.moveCall({
+        target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
+        typeArguments: [tokenType],
+        arguments: [
+          tx2.object(contract.configuration),                  // configuration
+          tx2.object(contract.stakeConfig),                    // stake_config
+          tx2.object(contract.lockConfig),                      // token_lock_config
+          tx2.object(capObjId),                                // treasury_cap
+          fee,                                                 // pool_creation_fee
+          tx2.pure.u8(bondingDex),                             // bonding_dex (0=Cetus, 1=Turbos)
+          firstBuy,                                            // coin_sui / coin_aida
+          tx2.pure.u64(minTokensOut),                          // amount_out
+          tx2.pure.u64(targetRaiseMist),                       // threshold  (wrap with Option<u64> helper if contract expects Option)
+          tx2.pure.u64(0),                                     // locking_time_ms
+          tx2.object(SUI_CLOCK),                               // clock
+          tx2.pure.string(nameAscii),                          // name
+          tx2.pure.string(symbolAscii),                         // symbol
+          tx2.pure.string(uriAscii),                           // uri
+          tx2.pure.string(descriptionAscii),                    // description
+          tx2.pure.string(twitterAscii),                       // twitter
+          tx2.pure.string(telegramAscii),                      // telegram
+          tx2.pure.string(websiteAscii),                       // website
+          tx2.object(contract.cetusBurnManager),               // cetus_burn_manager
+          tx2.object(contract.cetusPools),                     // cetus_pools
+          tx2.object(contract.cetusGlobalConfig),              // cetus_global_config
+          tx2.object(contract.suiMetadata),                    // metadata_sui  (ID: 0x587c29de216efd4219573e08a1f6964d4fa7cb714518c2c8a0f29abfa264327d on mainnet)
+          tx2.object(metaObjId),                               // metadata_token
+        ],
+      })
+      ==============================================================*/
       
       setStatus('Approve in wallet…', 'info')
       const result2 = await signAndExecuteTransaction({
@@ -675,19 +718,54 @@ export default function CreateTokenPage() {
             {/* Graduation DEX */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-3">Graduates To</label>
-              <div className="grid grid-cols-1 gap-2">
-                <div className="flex items-center gap-3 p-3 rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37]/10">
-                  <div className="w-6 h-6 rounded border-2 border-[#D4AF37] bg-[#D4AF37] flex items-center justify-center">
-                    <div className="w-2 h-2 rounded-full bg-white" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBondingDex(0)}
+                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition ${
+                    bondingDex === 0
+                      ? 'border-[#D4AF37]/60 bg-[#D4AF37]/10 ring-1 ring-[#D4AF37]/40'
+                      : 'border-gray-700 hover:border-gray-600 bg-white/[0.02]'
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                    bondingDex === 0 ? 'border-[#D4AF37] bg-[#D4AF37]' : 'border-gray-500'
+                  }`}>
+                    {bondingDex === 0 && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
-                  <div className="text-left flex-1">
-                    <div className="text-white font-medium">Momentum</div>
-                    <div className="text-xs text-gray-400">Concentrated Liquidity (CLMM)</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white font-medium flex items-center gap-2">
+                      Cetus
+                      <span className="text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-full">RECOMMENDED</span>
+                    </div>
+                    <div className="text-xs text-gray-400">Concentrated liquidity, automated pool + LP burn</div>
                   </div>
-                  <span className="text-[10px] font-bold bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 px-2 py-0.5 rounded-full">AUTO</span>
-                </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBondingDex(1)}
+                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition ${
+                    bondingDex === 1
+                      ? 'border-[#D4AF37]/60 bg-[#D4AF37]/10 ring-1 ring-[#D4AF37]/40'
+                      : 'border-gray-700 hover:border-gray-600 bg-white/[0.02]'
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                    bondingDex === 1 ? 'border-[#D4AF37] bg-[#D4AF37]' : 'border-gray-500'
+                  }`}>
+                    {bondingDex === 1 && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white font-medium">Turbos</div>
+                    <div className="text-xs text-gray-400">Concentrated liquidity, smaller pool but permissionless</div>
+                  </div>
+                </button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">When the bonding curve fills, a Momentum CLMM pool is created automatically</p>
+              <p className="text-xs text-gray-500 mt-2">
+                {bondingDex === 0
+                  ? 'When the bonding curve fills, a Cetus CLMM pool is created on-chain automatically and the LP position is burned — liquidity is permanent.'
+                  : 'Turbos graduation is admin-assisted while on-chain automation is finalized. Creator-owned LP is still burned before trading begins.'}
+              </p>
             </div>
 
             {/* Target Raise */}
