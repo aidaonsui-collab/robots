@@ -21,7 +21,7 @@ import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 // via `setter_pool_creation_fee`. These fallbacks are used only while the
 // on-chain read is in flight or if it fails.
 const DEFAULT_FEE_SUI_MIST  = BigInt(5_000_000_000)           // 5 SUI
-const DEFAULT_FEE_AIDA_MIST = BigInt(1_000_000_000_000)       // 1,000 AIDA (matches on-chain setter target)
+const DEFAULT_FEE_AIDA_MIST = BigInt(50_000_000_000_000)      // 50,000 AIDA (prod default; matches on-chain setter target)
 type PairType = 'SUI' | 'AIDA';
 // Pool virtual reserves (from V12 + AIDA configs, both unified 2026-04-20):
 //   I = initial_virtual_token_reserves =   100_000_000_000_000 (config field)
@@ -110,9 +110,9 @@ export default function CreateTokenPage() {
 
   // Minimum graduation threshold for AIDA-pair launches. Contract floor
   // is MINIMUM_THRESHOLD = 1,000 AIDA (hardcoded in moonbags_aida.move);
-  // we hold the UI floor at 10,000 AIDA to keep pools non-trivial while
-  // still letting smaller experiments through.
-  const MIN_AIDA = 10_000
+  // prod UI floor is 20,000,000 AIDA so launches ship with meaningful
+  // liquidity instead of a single whale snapping up 50%+ of supply.
+  const MIN_AIDA = 20_000_000
 
   useEffect(() => {
     if (pairType === 'AIDA' && parseFloat(targetRaise) < MIN_AIDA) {
