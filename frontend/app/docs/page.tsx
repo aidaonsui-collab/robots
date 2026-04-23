@@ -9,7 +9,13 @@ import {
 
 // ── Contract references ─────────────────────────────────────
 const CONTRACTS = {
-  'AIDA Token': '0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA',
+  'AIDA Token':             '0xcee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA',
+  'Moonbags SUI V14 (pkg)': '0xd58106acf43da3ed75dbe6eef4603207a701ea6df659ed07c005bb517cfcc995',
+  'SUI V14 Configuration':  '0x4eb8300e6f0d5f45311fba19f19e0bc765c9733a8508f7fa1410b649d6dc1ae2',
+  'Moonbags AIDA V5 (pkg)': '0x23e754414a8e5b26b0c16f16afed69bd90560dc184b466f58045ceb64a7e43c0',
+  'AIDA V2 Configuration':  '0x1b08a4a16024a7456e3c42449daec1dc8cbe130e24d6a6c37482e4fd2293b60f',
+  'AIDA Staking Pool':      '0x2b7c1b42426abdc1ece2cea3f564e32b7809cdcebc87d08fa56b440d9eb5c3d4',
+  'Bluefin AIDA/SUI Pool':  '0x71dadfa046ba0de3b06ec71c35f98ce93cd9e4e3ebb0e4c71b54f7769b28e94b',
 }
 
 const SKILLS_REPO = 'https://github.com/aidaonsui-collab/odyssey-agent-skills'
@@ -143,10 +149,10 @@ export default function DocsPage() {
             <h3 className="text-white font-semibold text-sm mb-4">Platform Overview</h3>
             <div className="grid sm:grid-cols-2 gap-4">
               {[
-                { icon: TrendingUp, title: 'Bonding Curve', desc: 'Fair-launch tokens with automated bonding curves. Tokens graduate to Momentum DEX at threshold.' },
+                { icon: TrendingUp, title: 'Bonding Curve', desc: 'Fair-launch tokens on a SUI- or AIDA-paired bonding curve. On graduation, liquidity auto-migrates to Cetus CLMM and LP is burned.' },
                 { icon: Mountain, title: 'Olympus Presale', desc: 'Fixed-price presales with escrow. Set your price, raise SUI, and auto-migrate to DEX.' },
                 { icon: Bot, title: 'AI Agents', desc: 'Launch tokenized AI agents with chat interfaces, earnings tracking, and autonomous trading skills.' },
-                { icon: Coins, title: 'AIDA Staking', desc: 'Stake AIDA to earn ~30% of all platform trading fees. No lock period required.' },
+                { icon: Coins, title: 'AIDA Staking', desc: 'Stake AIDA to earn ~30% of all platform trading fees (paid in SUI for SUI pairs, AIDA for AIDA pairs).' },
               ].map(({ icon: Icon, title, desc }) => (
                 <div key={title} className="flex gap-3">
                   <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -172,20 +178,22 @@ export default function DocsPage() {
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">
             <h3 className="text-white font-semibold text-sm mb-4">How It Works</h3>
             <div className="space-y-5">
-              <StepCard step={1} title="Create a Token" desc="Go to Projects > Create Token. Set a name, ticker, image, and socials. Your coin module is published on-chain and a bonding curve pool is created in one flow." />
-              <StepCard step={2} title="Trading Begins" desc="Anyone can buy and sell your token instantly on the bonding curve. Price increases as supply is purchased. 2% fee per trade is distributed: 40% platform, 30% creator, ~30% AIDA stakers." />
-              <StepCard step={3} title="Graduation to DEX" desc="When the pool reaches its SUI threshold (default 2,000 SUI), the token graduates to Momentum DEX automatically. A CLMM liquidity pool is created and trading continues on the open market." />
+              <StepCard step={1} title="Create a Token" desc="Go to Projects > Create Token. Set a name, ticker, image, and socials, and pick your pair (SUI or AIDA). Your coin module is published on-chain and a bonding curve pool is created in one flow." />
+              <StepCard step={2} title="Trading Begins" desc="Anyone can buy and sell your token instantly on the bonding curve. Price increases as supply is purchased. A 2% platform fee is taken per trade: 40% platform, 30% creator, ~30% AIDA stakers." />
+              <StepCard step={3} title="Graduation to DEX" desc="When the pool reaches its pair threshold (2,000 SUI or 20M AIDA by default), the token graduates automatically. A Cetus CLMM pool is created with the raised liquidity, the LP position is burned, and trading continues on the open market." />
             </div>
           </div>
 
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
             <h3 className="text-white font-semibold text-sm mb-3">Key Parameters</h3>
-            <InfoRow label="Creation Fee" value="5 SUI" />
+            <InfoRow label="Creation Fee (SUI pair)" value="5 SUI" />
+            <InfoRow label="Creation Fee (AIDA pair)" value="50,000 AIDA (admin-mutable)" />
             <InfoRow label="Platform Fee" value="2% per trade" />
-            <InfoRow label="Default Graduation Threshold" value="2,000 SUI" />
-            <InfoRow label="Minimum Threshold" value="1,000 SUI" />
+            <InfoRow label="Graduation Threshold (SUI pair)" value="2,000 SUI (default)" />
+            <InfoRow label="Graduation Threshold (AIDA pair)" value="20M AIDA (default)" />
             <InfoRow label="Token Decimals" value="6" />
-            <InfoRow label="DEX Migration" value="Momentum CLMM (0.3% LP fee)" />
+            <InfoRow label="Total Supply per Launch" value="800M tokens (I=100M, R=400M)" />
+            <InfoRow label="DEX Migration" value="Cetus CLMM (1% fee tier, LP burned)" />
           </div>
 
           {/* ═══ OLYMPUS PRESALE ═══ */}
@@ -348,9 +356,9 @@ export default function DocsPage() {
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">
             <h3 className="text-white font-semibold text-sm mb-4">How It Works</h3>
             <div className="space-y-5">
-              <StepCard step={1} title="Acquire AIDA" desc="AIDA has graduated from the bonding curve and trades on Bluefin and Cetus DEX. Buy AIDA on any supported DEX." />
+              <StepCard step={1} title="Acquire AIDA" desc="AIDA trades on Bluefin (AIDA/SUI CLMM pool) and Cetus. Buy AIDA on either DEX." />
               <StepCard step={2} title="Stake Your AIDA" desc="Go to the Staking page and stake your AIDA tokens. No minimum amount and no lock period — unstake anytime." />
-              <StepCard step={3} title="Earn Fees" desc="~30% of all bonding curve trading fees are distributed to AIDA stakers proportionally. Claim pending rewards at any time." />
+              <StepCard step={3} title="Earn Fees" desc="~30% of all bonding curve trading fees are distributed to AIDA stakers proportionally. SUI-pair trades accrue fees in SUI; AIDA-pair trades accrue in AIDA. Claim pending rewards from either pool at any time." />
             </div>
           </div>
 
@@ -361,7 +369,7 @@ export default function DocsPage() {
             <InfoRow label="AIDA Stakers" value="~30%" />
             <div className="mt-3 pt-3 border-t border-white/[0.04]">
               <p className="text-gray-500 text-xs">
-                Staking uses the legacy v7 stake config. AIDA stakers earn from both legacy and v11 bonding curve pools.
+                AIDA stakers earn from every package era — legacy v7, V11–V14 SUI forks, and AIDA V2/V5 AIDA fork. SUI-pair trades distribute in SUI; AIDA-pair trades distribute in AIDA. Each pair has its own stake pool on the Staking page; rewards from both are visible and claimable independently.
               </p>
             </div>
           </div>
@@ -398,6 +406,7 @@ export default function DocsPage() {
             <InfoRow label="RPC" value="https://fullnode.mainnet.sui.io" />
             <InfoRow label="Bonding Curve Module" value="moonbags" />
             <InfoRow label="Presale Module" value="presale" />
+            <InfoRow label="Migration Target" value="Cetus CLMM (bonding curve) · Momentum (presale)" />
           </div>
 
           {/* Footer */}
