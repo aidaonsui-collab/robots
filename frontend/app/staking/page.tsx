@@ -8,7 +8,7 @@ import { useSearchParams } from 'next/navigation'
 import { useCurrentWallet, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Coins, Gift, Loader2, Wallet, AlertTriangle, ArrowRight, TrendingUp, ExternalLink, Lock } from 'lucide-react'
 import { Transaction } from '@mysten/sui/transactions'
-import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V12_PREV, MOONBAGS_CONTRACT_LEGACY, SUI_CLOCK, AIDA_CONTRACT } from '@/lib/contracts'
+import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V12_PREV, MOONBAGS_CONTRACT_V13, MOONBAGS_CONTRACT_V14, MOONBAGS_CONTRACT_LEGACY, SUI_CLOCK, AIDA_CONTRACT } from '@/lib/contracts'
 import { MOONBAGS_AIDA_CONTRACT } from '@/lib/contracts_aida'
 
 // Lazy-load SuiLock component
@@ -97,8 +97,20 @@ const SUI_RPC = 'https://fullnode.mainnet.sui.io'
 // rewards from new-v12 pool trades.
 const V11_PKG      = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
 const PKG          = V11_PKG
-const STAKE_CFG    = MOONBAGS_CONTRACT_V12_PREV.stakeConfig    // 0x59c35bc…
+const STAKE_CFG    = MOONBAGS_CONTRACT_V12_PREV.stakeConfig    // 0x59c35bc… (primary; write target)
 const MBAGS_CFG    = MOONBAGS_CONTRACT_V12_PREV.configuration
+
+// All known SUI-pair AIDA stake configs ever shipped to mainnet. The
+// staking page traverses these in order when reading a user's position
+// so stakes on older publishes (admin direct-staked on V7/V13/V14 etc.)
+// still show up. Writes (stake/unstake/claim) always target STAKE_CFG.
+const ALL_SUI_PAIR_STAKE_CFGS: readonly string[] = [
+  STAKE_CFG,                                      // V11/V12_PREV (primary)
+  MOONBAGS_CONTRACT_V14.stakeConfig,              // V14 (latest republish)
+  MOONBAGS_CONTRACT_V13.stakeConfig,              // V13 (superseded, but may hold pre-v14 positions)
+  MOONBAGS_CONTRACT_V12.stakeConfig,              // V12 new
+  MOONBAGS_CONTRACT_LEGACY.stakeConfig,           // V7 root (the ORIGINAL admin stake landing zone)
+]
 
 // Legacy v1 AIDA staking (original super-legacy — still migrates to current PKG)
 const LEGACY_PKG        = '0x50e60400cc2ea760b5fb8380fa3f1fc0a94dfc592ec78487313d21b50af846da'
@@ -279,34 +291,32 @@ function StakingPageInner() {
 
   // ── Check if AIDA pool exists in v3 config ──────────────────────────────────
   // Returns the pool objectId if found, so callers can use it without stale state
-  const checkAidaPool = async (): Promise<string | null> => {
+  /** Find the AIDA StakingPool object under a specific stake-config, paginating through dynamic fields. */
+  const findAidaPoolIn = async (cfg: string): Promise<string | null> => {
     try {
-      // Paginate through ALL dynamic fields until AIDA is found. Each meme
-      // token with staking enabled adds a field under STAKE_CFG, so the
-      // first 50 filled up and existing AIDA stakers started seeing
-      // "0 staked" when their pool was beyond the first page.
       let cursor: string | null = null
       for (let page = 0; page < 20; page++) {  // hard cap at 1000 fields
-        const fields: any = await rpc('suix_getDynamicFields', [STAKE_CFG, cursor, 50])
+        const fields: any = await rpc('suix_getDynamicFields', [cfg, cursor, 50])
         const pools: any[] = fields?.data ?? []
         const aidaPool = pools.find((p: any) =>
           p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
         )
-        if (aidaPool) {
-          setAidaPoolExists(true)
-          setV3PoolId(aidaPool.objectId)
-          return aidaPool.objectId
-        }
+        if (aidaPool) return aidaPool.objectId
         if (!fields?.hasNextPage || !fields?.nextCursor) break
         cursor = fields.nextCursor
       }
-      setAidaPoolExists(false)
       return null
     } catch (e) {
-      console.error('checkAidaPool', e)
-      setAidaPoolExists(false)
+      console.warn(`[staking] findAidaPoolIn ${cfg.slice(0, 10)}… failed`, e)
       return null
     }
+  }
+
+  const checkAidaPool = async (): Promise<string | null> => {
+    const poolId = await findAidaPoolIn(STAKE_CFG)
+    setAidaPoolExists(!!poolId)
+    if (poolId) setV3PoolId(poolId)
+    return poolId
   }
 
   // ── Fetch AIDA-pair rewards ─────────────────────────────────────────────
@@ -396,36 +406,74 @@ function StakingPageInner() {
       ])
       setAidaBalance(Number(balData?.totalBalance ?? 0) / 1e9)
 
-      // v3 stake position (use freshly resolved poolId, not stale state)
-      if (poolId) {
-        const [dynField, poolObj] = await Promise.all([
-          rpc('suix_getDynamicFieldObject', [poolId, { type: 'address', value: address }]),
-          rpc('sui_getObject', [poolId, { showContent: true }])
-        ])
-        if (dynField?.data?.content?.fields) {
+      // v3 stake position — check the PRIMARY config first (poolId above),
+      // then fall back to every other known SUI-pair stake config. First
+      // hit with a non-zero position wins; that's the user's active stake.
+      const MULTIPLIER = BigInt('10000000000000000') // 1e16 — matches contract constant
+      type Position = {
+        stakerBalance: bigint
+        stakerEarned:  bigint
+        stakerRwdIdx:  bigint
+        poolRwdIdx:    bigint
+        pending:       bigint
+        unstakeDeadline: number
+        configId:      string
+        poolId:        string
+      }
+      const readPosition = async (pId: string, cfgId: string): Promise<Position | null> => {
+        try {
+          const [dynField, poolObj] = await Promise.all([
+            rpc('suix_getDynamicFieldObject', [pId, { type: 'address', value: address }]),
+            rpc('sui_getObject', [pId, { showContent: true }])
+          ])
+          if (!dynField?.data?.content?.fields) return null
           const f = dynField.data.content.fields
           const stakerBalance = BigInt(f.balance ?? 0)
+          if (stakerBalance === 0n) return null
           const stakerEarned  = BigInt(f.earned ?? 0)
           const stakerRwdIdx  = BigInt(f.reward_index ?? 0)
-
           const poolFields    = poolObj?.data?.content?.fields
           const poolRwdIdx    = BigInt(poolFields?.reward_index ?? 0)
-
-          const MULTIPLIER    = BigInt('10000000000000000') // 1e16 — matches contract constant
           const pending       = poolRwdIdx > stakerRwdIdx
             ? (stakerBalance * (poolRwdIdx - stakerRwdIdx)) / MULTIPLIER
             : BigInt(0)
+          return {
+            stakerBalance, stakerEarned, stakerRwdIdx, poolRwdIdx, pending,
+            unstakeDeadline: Number(f.unstake_deadline ?? 0),
+            configId: cfgId, poolId: pId,
+          }
+        } catch { return null }
+      }
 
-          setV3Staked(Number(stakerBalance) / 1e9)
-          setV3Rewards(Number(stakerEarned + pending) / 1e9)
-          // Store raw components for live ticker
-          setStakerBalance(stakerBalance)
-          setStakerEarned(stakerEarned)
-          setStakerRwdIdx(stakerRwdIdx)
-          setPoolRwdIdx(poolRwdIdx)
-          setLiveRewards(Number(stakerEarned + pending) / 1e9)
-          setUnstakeDeadline(Number(f.unstake_deadline ?? 0))
+      let pos: Position | null = poolId ? await readPosition(poolId, STAKE_CFG) : null
+
+      // Fallback: search every other known SUI-pair stake config for a pool
+      // holding this wallet's position. Stops at first hit.
+      if (!pos) {
+        for (const cfg of ALL_SUI_PAIR_STAKE_CFGS) {
+          if (cfg === STAKE_CFG) continue  // already tried
+          const altPoolId = await findAidaPoolIn(cfg)
+          if (!altPoolId) continue
+          const p = await readPosition(altPoolId, cfg)
+          if (p) {
+            console.log(`[staking] found AIDA stake on alternate config ${cfg.slice(0, 10)}… pool ${altPoolId.slice(0, 10)}…`)
+            pos = p
+            // expose the alt pool id as v3PoolId so the live-ticker polling picks it up
+            setV3PoolId(altPoolId)
+            break
+          }
         }
+      }
+
+      if (pos) {
+        setV3Staked(Number(pos.stakerBalance) / 1e9)
+        setV3Rewards(Number(pos.stakerEarned + pos.pending) / 1e9)
+        setStakerBalance(pos.stakerBalance)
+        setStakerEarned(pos.stakerEarned)
+        setStakerRwdIdx(pos.stakerRwdIdx)
+        setPoolRwdIdx(pos.poolRwdIdx)
+        setLiveRewards(Number(pos.stakerEarned + pos.pending) / 1e9)
+        setUnstakeDeadline(pos.unstakeDeadline)
       }
 
       // Legacy v1 position
