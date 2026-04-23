@@ -281,16 +281,26 @@ function StakingPageInner() {
   // Returns the pool objectId if found, so callers can use it without stale state
   const checkAidaPool = async (): Promise<string | null> => {
     try {
-      const fields = await rpc('suix_getDynamicFields', [STAKE_CFG, null, 50])
-      const pools: any[] = fields?.data ?? []
-      const aidaPool = pools.find((p: any) =>
-        p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
-      )
-      setAidaPoolExists(!!aidaPool)
-      if (aidaPool) {
-        setV3PoolId(aidaPool.objectId)
-        return aidaPool.objectId
+      // Paginate through ALL dynamic fields until AIDA is found. Each meme
+      // token with staking enabled adds a field under STAKE_CFG, so the
+      // first 50 filled up and existing AIDA stakers started seeing
+      // "0 staked" when their pool was beyond the first page.
+      let cursor: string | null = null
+      for (let page = 0; page < 20; page++) {  // hard cap at 1000 fields
+        const fields: any = await rpc('suix_getDynamicFields', [STAKE_CFG, cursor, 50])
+        const pools: any[] = fields?.data ?? []
+        const aidaPool = pools.find((p: any) =>
+          p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
+        )
+        if (aidaPool) {
+          setAidaPoolExists(true)
+          setV3PoolId(aidaPool.objectId)
+          return aidaPool.objectId
+        }
+        if (!fields?.hasNextPage || !fields?.nextCursor) break
+        cursor = fields.nextCursor
       }
+      setAidaPoolExists(false)
       return null
     } catch (e) {
       console.error('checkAidaPool', e)
@@ -305,13 +315,32 @@ function StakingPageInner() {
   // — AIDA pairs are newly launched so most wallets won't have a position.
   const fetchAidaPairRewards = useCallback(async () => {
     if (!address) return
+    // Check BOTH V2 (0xd2da…) and V3 (0xf87f6cd…) AIDA-pair stake configs.
+    // Users who staked in V2 before v3 published still have positions
+    // there — checking only MOONBAGS_AIDA_CONTRACT (now aliased to V3)
+    // hid them. Sum positions across both. Also paginate within each.
+    const V2_STK_CFG = '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09'
+    const V3_STK_CFG = AIDA_PAIR_STK_CFG  // MOONBAGS_AIDA_CONTRACT.stakeConfig = V3
+    const configs = [V3_STK_CFG, V2_STK_CFG]
+
     try {
-      const fields = await rpc('suix_getDynamicFields', [AIDA_PAIR_STK_CFG, null, 50])
-      const pools: any[] = fields?.data ?? []
-      const aidaPool = pools.find((p: any) =>
-        p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
-      )
-      if (!aidaPool) {
+      let foundPool: { objectId: string; configId: string } | null = null
+      for (const cfg of configs) {
+        let cursor: string | null = null
+        for (let page = 0; page < 20; page++) {
+          const fields: any = await rpc('suix_getDynamicFields', [cfg, cursor, 50])
+          const pools: any[] = fields?.data ?? []
+          const p = pools.find((x: any) =>
+            x.objectType?.includes('StakingPool') && x.objectType?.includes('aida::AIDA')
+          )
+          if (p) { foundPool = { objectId: p.objectId, configId: cfg }; break }
+          if (!fields?.hasNextPage || !fields?.nextCursor) break
+          cursor = fields.nextCursor
+        }
+        if (foundPool) break
+      }
+
+      if (!foundPool) {
         setAidaPairPoolExists(false)
         setAidaPairPoolId(null)
         setAidaPairRewards(0)
@@ -322,11 +351,11 @@ function StakingPageInner() {
         return
       }
       setAidaPairPoolExists(true)
-      setAidaPairPoolId(aidaPool.objectId)
+      setAidaPairPoolId(foundPool.objectId)
 
       const [stakerField, poolObj] = await Promise.all([
-        rpc('suix_getDynamicFieldObject', [aidaPool.objectId, { type: 'address', value: address }]),
-        rpc('sui_getObject', [aidaPool.objectId, { showContent: true }]),
+        rpc('suix_getDynamicFieldObject', [foundPool.objectId, { type: 'address', value: address }]),
+        rpc('sui_getObject', [foundPool.objectId, { showContent: true }]),
       ])
       const poolRwdIdx = BigInt(poolObj?.data?.content?.fields?.reward_index ?? 0)
       setAidaPairPoolIdx(poolRwdIdx)

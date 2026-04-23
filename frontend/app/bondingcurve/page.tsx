@@ -169,24 +169,31 @@ export default function BondingCurvePage() {
       try {
         let totalRaw = 0
 
-        // v11: find AIDA StakingPool dynamically from stake config
-        const fields = await rpc('suix_getDynamicFields', [V11_STAKE_CFG, null, 50])
-        const aidaPool = (fields?.data ?? []).find((p: any) =>
-          p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
-        )
-        if (aidaPool?.objectId) {
-          totalRaw += await getPoolTotal(aidaPool.objectId)
+        // Paginate dynamic fields until the AIDA pool is found — each
+        // memecoin with staking enabled adds a field, so the first 50
+        // fill up and AIDA falls off the first page.
+        const findAidaPool = async (cfg: string): Promise<string | null> => {
+          let cursor: string | null = null
+          for (let page = 0; page < 20; page++) {
+            const f: any = await rpc('suix_getDynamicFields', [cfg, cursor, 50])
+            const p = (f?.data ?? []).find((x: any) =>
+              x.objectType?.includes('StakingPool') && x.objectType?.includes('aida::AIDA')
+            )
+            if (p) return p.objectId
+            if (!f?.hasNextPage || !f?.nextCursor) break
+            cursor = f.nextCursor
+          }
+          return null
         }
+
+        // v11/V12_PREV SUI-pair stake config
+        const aidaPoolId = await findAidaPool(V11_STAKE_CFG)
+        if (aidaPoolId) totalRaw += await getPoolTotal(aidaPoolId)
 
         // AIDA-pair fork pool (earns AIDA from AIDA-pair trades). May not exist
         // yet if no one has initialized it — quiet no-op in that case.
-        const forkFields = await rpc('suix_getDynamicFields', [AIDA_PAIR_STK_CFG, null, 50])
-        const forkAidaPool = (forkFields?.data ?? []).find((p: any) =>
-          p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
-        )
-        if (forkAidaPool?.objectId) {
-          totalRaw += await getPoolTotal(forkAidaPool.objectId)
-        }
+        const forkAidaPoolId = await findAidaPool(AIDA_PAIR_STK_CFG)
+        if (forkAidaPoolId) totalRaw += await getPoolTotal(forkAidaPoolId)
 
         // Legacy pool (small amount, kept for completeness)
         totalRaw += await getPoolTotal(AIDA_POOL)
