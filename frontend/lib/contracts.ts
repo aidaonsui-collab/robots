@@ -1,4 +1,4 @@
-import { MOONBAGS_AIDA_CONTRACT, MOONBAGS_AIDA_CONTRACT_V2, MOONBAGS_AIDA_CONTRACT_V3, MOONBAGS_AIDA_CONTRACT_PREV } from './contracts_aida'
+import { MOONBAGS_AIDA_CONTRACT, MOONBAGS_AIDA_CONTRACT_V2, MOONBAGS_AIDA_CONTRACT_V3, MOONBAGS_AIDA_CONTRACT_PREV, MOONBAGS_AIDA_V2_ORIGINAL_PKG } from './contracts_aida'
 // ============================================================
 // TheOdyssey.fun — Contract Addresses (Verified on-chain)
 // Last verified: 2026-04-09 — v11 coexist refactor
@@ -153,10 +153,16 @@ export function getMoonbagsContractForPackage(packageId?: string | null): Moonba
   // AIDA-fork routing — each AIDA publish has its own shared objects,
   // so pools must route to the bundle that created them:
   //   V3 (0x690796…) = Cetus auto-migration, 2026-04-23 publish
-  //   V2 (0x593a2e…) = admin-settable fee, admin-dump graduation
+  //   V2 (0x593a2e… original / 0x7555b1da… upgraded) = admin-settable fee
   //   PREV (0x2156ce…) = original 2026-04-18 publish
+  //
+  // V2's Sui-level package was upgraded on 2026-04-23 to add
+  // init_cetus_aida_pool; the on-chain type strings of pools created
+  // under V2 still carry the original-id 0x593a2e87… forever, so we
+  // must match BOTH the original and the upgraded pkgId when routing.
   if (normalized === MOONBAGS_AIDA_CONTRACT_V3.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT_V3
   if (normalized === MOONBAGS_AIDA_CONTRACT_V2.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT_V2
+  if (normalized === MOONBAGS_AIDA_V2_ORIGINAL_PKG.toLowerCase()) return MOONBAGS_AIDA_CONTRACT_V2
   if (normalized === MOONBAGS_AIDA_CONTRACT_PREV.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT_PREV
 
   // V14 (2026-04-23 republish): admin-settable fee + Cetus auto-migration.
