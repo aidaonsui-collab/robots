@@ -23,24 +23,56 @@ import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 const DEFAULT_FEE_SUI_MIST  = BigInt(5_000_000_000)           // 5 SUI
 const DEFAULT_FEE_AIDA_MIST = BigInt(50_000_000_000_000)      // 50,000 AIDA (prod default; matches on-chain setter target)
 type PairType = 'SUI' | 'AIDA';
-// Pool virtual reserves (from V12 + AIDA configs, both unified 2026-04-20):
-//   I = initial_virtual_token_reserves =   100_000_000_000_000 (config field)
-//   R = remain_token_reserves          =   400_000_000_000_000 (config field, 4×I)
-//   virtual_token at pool creation     = R²/(R-I) = 533,333,333,333,333 (~533M)
-//   virtual_sui at pool creation       = threshold * I/(R-I) = threshold/3
-//   total minted per pool              = 2R = 800M tokens
-const POOL_VIRTUAL_TOKEN     = BigInt(533_333_333_333_333)   // R²/(R-I) with unified 800M-supply config
+
+// Pool virtual reserves differ by fork — do NOT share a single constant.
+//
+// SUI V14 (contracts/moonbags.move init):
+//   I = 533,333,333,500,000   R = 1,066,666,667,000,000 (R = 2·I)
+//   virtual_token_start = R²/(R-I) ≈ 2,133M
+//   virtual_sui_start   = threshold × I/(R-I) ≈ threshold
+//
+// AIDA V2 (contracts/moonbags_aida.move init):
+//   I = 1,066,666,667,000,000   R = 4,266,666,668,000,000 (R = 4·I)
+//   virtual_token_start = R²/(R-I) ≈ 5,689M
+//   virtual_sui_start   = threshold × I/(R-I) = threshold/3
+//
+// Previously this file had a single hardcoded POOL_VIRTUAL_TOKEN =
+// 533_333_333_333_333 based on an imagined I=100M / R=400M config — which
+// matched neither fork. For AIDA that was 10.67× too small, so the
+// frontend would pass an `amount_out` worth ~9% of the AIDA the user
+// intended to spend. The contract bought exactly that many tokens,
+// charged the tiny cost, and refunded the rest.
+interface CurveParams {
+  I: bigint                 // initial_virtual_token_reserves
+  R: bigint                 // remain_token_reserves
+  poolVirtualToken: bigint  // R² / (R - I) — vToken at pool creation
+}
+function curveFor(pair: PairType): CurveParams {
+  if (pair === 'AIDA') {
+    const I = 1_066_666_667_000_000n
+    const R = 4_266_666_668_000_000n
+    return { I, R, poolVirtualToken: (R * R) / (R - I) }
+  }
+  const I = 533_333_333_500_000n
+  const R = 1_066_666_667_000_000n
+  return { I, R, poolVirtualToken: (R * R) / (R - I) }
+}
 import { getCoinModuleBytes, extractPublishResult } from '@/lib/coinPublish'
 
 const DEFAULT_THRESHOLD_MIST = BigInt(3_000_000_000)           // 3 SUI default graduation threshold
 const TOKEN_DECIMALS = 6
 
 // ── Token amount estimation ────────────────────────────────────
-// virtual_sui_start = threshold/3 (from config: remain = 4 × initial)
-function estimateTokensFromSui(suiMist: bigint, thresholdMist: bigint = DEFAULT_THRESHOLD_MIST): number {
+// virtual_sui_start = threshold × I/(R-I) — ratio differs per fork.
+function estimateTokensFromSui(
+  suiMist: bigint,
+  thresholdMist: bigint = DEFAULT_THRESHOLD_MIST,
+  pair: PairType = 'SUI',
+): number {
   if (suiMist <= 0n) return 0
-  const virtualSuiStart = thresholdMist / 3n  // threshold/3 with new config ratio
-  const rawTokens = (POOL_VIRTUAL_TOKEN * suiMist) / (virtualSuiStart + suiMist)
+  const { I, R, poolVirtualToken } = curveFor(pair)
+  const virtualSuiStart = (thresholdMist * I) / (R - I)
+  const rawTokens = (poolVirtualToken * suiMist) / (virtualSuiStart + suiMist)
   return Number(rawTokens) / Math.pow(10, TOKEN_DECIMALS)
 }
 
@@ -212,16 +244,17 @@ export default function CreateTokenPage() {
     setStatusMsg(msg); setStatusType(type)
   }
 
-  // Estimated tokens from initial buy (use user's chosen threshold for accuracy)
+  // Estimated tokens from initial buy (use user's chosen threshold + pair
+  // for accuracy — AIDA and SUI forks have different curve constants).
   const suiVal = parseFloat(formData.initialSui) || 0
   const suiMist = BigInt(Math.floor(suiVal * 1e9))
   const displayThresholdMist = BigInt(Math.floor((parseFloat(targetRaise) || 3) * 1e9))
-  const estTokens = estimateTokensFromSui(suiMist, displayThresholdMist)
+  const estTokens = estimateTokensFromSui(suiMist, displayThresholdMist, pairType)
 
   // Pool config step tokens
   const configSuiVal = parseFloat(firstBuyAmount) || 0
   const configSuiMist = BigInt(Math.floor(configSuiVal * 1e9))
-  const configEstTokens = estimateTokensFromSui(configSuiMist, displayThresholdMist)
+  const configEstTokens = estimateTokensFromSui(configSuiMist, displayThresholdMist, pairType)
 
   // ── Image upload ──────────────────────────────────────────
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -417,9 +450,12 @@ export default function CreateTokenPage() {
       // for. Pass the full expected amount (minus 1 mist for
       // integer-division rounding) so the contract consumes the whole
       // first-buy coin.
-      const virtualSuiStart = targetRaiseMist / 3n  // threshold/3 with new config ratio
+      // Use the pair-specific curve constants — AIDA's pool is ~10.67×
+      // deeper than SUI's because R/I = 4 (AIDA) vs 2 (SUI).
+      const curve = curveFor(pairType)
+      const virtualSuiStart = (targetRaiseMist * curve.I) / (curve.R - curve.I)
       const expectedTokensOut: bigint = configSuiMist > 0n
-        ? (POOL_VIRTUAL_TOKEN * configSuiMist) / (virtualSuiStart + configSuiMist)
+        ? (curve.poolVirtualToken * configSuiMist) / (virtualSuiStart + configSuiMist)
         : 1n
       // Subtract 1 to absorb any rounding mismatch between JS bigint math
       // and the on-chain u128 curve math. A 1-unit-over `amount_out`
