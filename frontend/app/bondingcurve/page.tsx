@@ -10,7 +10,7 @@ import { fetchPoolTrades, PoolToken } from '@/lib/tokens'
 import { type PresaleToken } from '@/lib/presale'
 import { getPairType, type PairToken } from '@/lib/contracts_aida'
 
-type FilterType = 'all' | 'new' | 'featured' | 'trending' | 'graduating'
+type FilterType = 'all' | 'graduated' | 'new' | 'featured' | 'trending' | 'graduating'
 type SortType = 'marketcap' | 'newest' | 'progress' | 'volume'
 
 interface ActivityItem {
@@ -34,7 +34,7 @@ export default function BondingCurvePage() {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterType>('all')
-  const [sort, setSort] = useState<SortType>('marketcap')
+  const [sort, setSort] = useState<SortType>('newest')
   const [sortOpen, setSortOpen] = useState(false)
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [realTokens, setRealTokens] = useState<PoolToken[]>([])
@@ -246,7 +246,9 @@ export default function BondingCurvePage() {
     const matchesSearch =
       token.name.toLowerCase().includes(search.toLowerCase()) ||
       token.symbol.toLowerCase().includes(search.toLowerCase())
-    return matchesSearch
+    const isCompleted = token.isCompleted ?? (token as any).isCompleted ?? false
+    const matchesTab = filter === 'graduated' ? isCompleted : !isCompleted
+    return matchesSearch && matchesTab
   }).sort((a, b) => {
     switch (sort) {
       case 'progress': return b.progress - a.progress
@@ -457,7 +459,7 @@ export default function BondingCurvePage() {
           </div>
 
           <div className="flex gap-2 flex-wrap">
-            {(['all'] as FilterType[]).map((f) => (
+            {(['all', 'graduated'] as FilterType[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -467,7 +469,7 @@ export default function BondingCurvePage() {
                     : 'bg-white/[0.03] border border-white/[0.04] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]'
                 }`}
               >
-                {f === 'all' ? 'All' : f}
+                {f === 'all' ? 'All' : f === 'graduated' ? 'Graduated' : f}
               </button>
             ))}
 
