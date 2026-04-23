@@ -24,37 +24,27 @@ const DEFAULT_FEE_SUI_MIST  = BigInt(5_000_000_000)           // 5 SUI
 const DEFAULT_FEE_AIDA_MIST = BigInt(50_000_000_000_000)      // 50,000 AIDA (prod default; matches on-chain setter target)
 type PairType = 'SUI' | 'AIDA';
 
-// Pool virtual reserves differ by fork — do NOT share a single constant.
+// Unified bonding-curve config: both SUI and AIDA forks use I = 100M, R = 400M
+// (total supply 2R = 800M tokens per launch). Admin ran `update_config` on
+// both Configuration objects (SUI V14 + AIDA V2) to land these values, so the
+// on-chain `create_with_fee` asserts match this hardcoded assumption.
 //
-// SUI V14 (contracts/moonbags.move init):
-//   I = 533,333,333,500,000   R = 1,066,666,667,000,000 (R = 2·I)
-//   virtual_token_start = R²/(R-I) ≈ 2,133M
-//   virtual_sui_start   = threshold × I/(R-I) ≈ threshold
-//
-// AIDA V2 (contracts/moonbags_aida.move init):
-//   I = 1,066,666,667,000,000   R = 4,266,666,668,000,000 (R = 4·I)
-//   virtual_token_start = R²/(R-I) ≈ 5,689M
+//   virtual_token_start = R²/(R-I) = 400M²/300M ≈ 533M × 1e6
 //   virtual_sui_start   = threshold × I/(R-I) = threshold/3
 //
-// Previously this file had a single hardcoded POOL_VIRTUAL_TOKEN =
-// 533_333_333_333_333 based on an imagined I=100M / R=400M config — which
-// matched neither fork. For AIDA that was 10.67× too small, so the
-// frontend would pass an `amount_out` worth ~9% of the AIDA the user
-// intended to spend. The contract bought exactly that many tokens,
-// charged the tiny cost, and refunded the rest.
+// Older drafts of this module had stale hardcoded numbers that didn't match
+// either fork's live config — that's what caused the PEPEG first-buy bug
+// where only ~9% of the user's AIDA was consumed. Keep both branches of
+// curveFor() identical going forward unless the two forks deliberately
+// diverge again.
 interface CurveParams {
   I: bigint                 // initial_virtual_token_reserves
   R: bigint                 // remain_token_reserves
   poolVirtualToken: bigint  // R² / (R - I) — vToken at pool creation
 }
-function curveFor(pair: PairType): CurveParams {
-  if (pair === 'AIDA') {
-    const I = 1_066_666_667_000_000n
-    const R = 4_266_666_668_000_000n
-    return { I, R, poolVirtualToken: (R * R) / (R - I) }
-  }
-  const I = 533_333_333_500_000n
-  const R = 1_066_666_667_000_000n
+function curveFor(_pair: PairType): CurveParams {
+  const I = 100_000_000_000_000n   // 100M × 1e6 (token decimals = 6)
+  const R = 400_000_000_000_000n   // 400M × 1e6 (R = 4·I → vSui = threshold/3)
   return { I, R, poolVirtualToken: (R * R) / (R - I) }
 }
 import { getCoinModuleBytes, extractPublishResult } from '@/lib/coinPublish'
