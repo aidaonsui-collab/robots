@@ -20,7 +20,7 @@ export interface MoonbagsContract {
   tokenRegistry: string
 }
 
-export const MOONBAGS_AIDA_CONTRACT: MoonbagsContract = {
+export const MOONBAGS_AIDA_CONTRACT_V2: MoonbagsContract = {
   packageId:     '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313',
   module:        'moonbags',
   configuration: '0x1b08a4a16024a7456e3c42449daec1dc8cbe130e24d6a6c37482e4fd2293b60f',
@@ -28,6 +28,32 @@ export const MOONBAGS_AIDA_CONTRACT: MoonbagsContract = {
   lockConfig:    '0x2d6b3083c48aea4dc6db9e64daa5f805b124f578ac43b3beea224a079aedf00a',
   tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
 }
+
+// ── Moonbags AIDA V3 — 2026-04-23 publish with Cetus auto-migration ──
+// First AIDA-fork that ships with `bonding_dex: u8` + `init_cetus_aida_pool`
+// wired into the completion path. New AIDA-pair tokens minted under V3
+// auto-migrate to Cetus (Coin<Token, AIDA> pool) when the bonding curve
+// fills; Turbos selection currently falls back to admin-dump (phase 2b).
+// Publish TX: 7zQv7kdMtdT9YuxFAivAN4D48DNk11qzKsm5pXKCSAaB
+export const MOONBAGS_AIDA_CONTRACT_V3: MoonbagsContract = {
+  packageId:     '0x69079609ad446344ec8114b9466e04e9210daae60c9289e72037bc5e8cd54a3c',
+  module:        'moonbags',
+  configuration: '0xb9d1ca5653dda324f219ee6beef1114d8ba2a2f48af05c311d553eb27bcdb820',
+  stakeConfig:   '0xf87f6cdd86ede677b85e8eb85e8b2ce856b348e4aad6c08c0d4ef3fbe2d1dcbb',
+  lockConfig:    '0x04e67b589f920c427b62728d7e41d638eeac060046c8889f686b5521facf503b',
+  tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
+}
+// V3-only objects: threshold config + admin caps captured separately
+export const MOONBAGS_AIDA_V3_THRESHOLD_CONFIG = '0x22bcff035b6f31e019d6a2ea6a6e60b483b26f9b61eb59c659176e4c1374f9ff'
+
+// Default target for new AIDA-pair pool creation — points at V3 so the
+// Cetus/Turbos DEX selector is usable. Existing pools on V2 / PREV stay
+// on their original shared objects via getMoonbagsContractForPackage().
+export const MOONBAGS_AIDA_CONTRACT: MoonbagsContract = MOONBAGS_AIDA_CONTRACT_V3
+
+// Mainnet `CoinMetadata<AIDA>` object — passed to init_cetus_aida_pool
+// as the quote-coin metadata argument. Singleton on mainnet.
+export const AIDA_METADATA_ID = '0x591bd6e9daf2ce64436329f3060217078f4cdeac2a4e66f506bb12b3a7fd99f8'
 
 // ── Moonbags AIDA PREV (2026-04-18 original publish) ──────────
 // Pools launched under the first AIDA-fork package still reference these
@@ -64,7 +90,8 @@ export type PairToken = 'SUI' | 'AIDA'
 export const AIDA_PAIR_PACKAGE_IDS: readonly string[] = [
   '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8', // 2026-04-18 publish
   '0xc83604a9ff4e757fc965c93823c199b312af8e0ed43a742628b3defe7931b46f', // 2026-04-21 republish (stale bytecode, superseded)
-  '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // 2026-04-21 republish (current, setter verified)
+  '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // 2026-04-21 republish (v2, setter verified)
+  '0x69079609ad446344ec8114b9466e04e9210daae60c9289e72037bc5e8cd54a3c', // 2026-04-23 republish (v3, Cetus auto-migration)
 ] as const
 
 // Given a moonbags package ID (from a pool's on-chain type), return the
