@@ -5,11 +5,11 @@
   "crons": [
     {
       "path": "/api/cron/cetus-migrate-aida",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/cron/cetus-migrate-sui",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
