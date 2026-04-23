@@ -295,7 +295,7 @@ module moonbags_aida::moonbags {
             init_stake_fee_withdraw: 1,                            // ~0% meme stakers (must be >0)
             init_platform_stake_fee_withdraw: 2999,                // ~30% AIDA stakers
             token_platform_type_name: b"cee208b8ae33196244b389e61ffd1202e7a1ae06c8ec210d33402ff649038892::aida::AIDA".to_ascii_string(),
-            pool_creation_fee: 5_000_000_000,                      // 5 AIDA at launch; admin can retune
+            pool_creation_fee: 100_000_000_000_000,                // 100,000 AIDA; admin can retune
         };
         
         dynamic_field::add(&mut configuration.id, BUY_BLOCK_DURATION_FIELD, 1000);
