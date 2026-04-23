@@ -13,6 +13,76 @@ import { MOONBAGS_AIDA_CONTRACT } from '@/lib/contracts_aida'
 
 // Lazy-load SuiLock component
 const SuiLockPage = lazy(() => import('../suilock/page'))
+
+// ─── Pool icons ─────────────────────────────────────────────────────────────
+// Branded SVGs so each pool reads at a glance. VikingBoat = Odyssey/SUI-pair,
+// Robot = AIDA-pair (robots repo, AIDA-native tokens).
+function VikingBoatIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 80 70" fill="none" className={className} aria-hidden="true">
+      <path d="M 10,45 Q 5,50 3,52 Q 40,58 77,52 Q 75,50 70,45 Z" fill="currentColor" stroke="currentColor" strokeWidth="1.5" opacity="0.9"/>
+      <path d="M 10,45 L 15,35 L 65,35 L 70,45" fill="currentColor" stroke="currentColor" strokeWidth="1.5" opacity="0.95"/>
+      <line x1="17" y1="37" x2="63" y2="37" stroke="currentColor" strokeWidth="0.8" opacity="0.4"/>
+      <line x1="18" y1="40" x2="62" y2="40" stroke="currentColor" strokeWidth="0.8" opacity="0.4"/>
+      <g transform="translate(70, 40)">
+        <path d="M 0,0 Q 5,-5 10,-8" stroke="currentColor" strokeWidth="2" fill="none"/>
+        <ellipse cx="12" cy="-10" rx="4" ry="5" fill="currentColor" stroke="currentColor" strokeWidth="1.5"/>
+        <circle cx="13" cy="-11" r="1" fill="#D4AF37"/>
+        <path d="M 14,-8 L 17,-7 L 16,-9 Z" fill="currentColor"/>
+        <path d="M 11,-14 L 10,-18 L 12,-15" fill="currentColor"/>
+      </g>
+      <g transform="translate(10, 40)">
+        <path d="M 0,0 Q -4,-3 -7,-6" stroke="currentColor" strokeWidth="2" fill="none"/>
+        <circle cx="-8" cy="-7" r="2.5" fill="currentColor" stroke="currentColor" strokeWidth="1.5"/>
+      </g>
+      <line x1="40" y1="35" x2="40" y2="-5" stroke="currentColor" strokeWidth="2.5"/>
+      <path d="M 40,-3 Q 55,5 60,15 Q 58,20 40,30 Z" fill="currentColor" stroke="currentColor" strokeWidth="1.8" opacity="0.75"/>
+      <line x1="40" y1="5" x2="57" y2="8" stroke="currentColor" strokeWidth="0.8" opacity="0.4"/>
+      <line x1="40" y1="12" x2="58" y2="15" stroke="currentColor" strokeWidth="0.8" opacity="0.4"/>
+      <g opacity="0.85">
+        <circle cx="22" cy="38" r="3" fill="#8B4513" stroke="currentColor" strokeWidth="0.8"/>
+        <circle cx="32" cy="38" r="3" fill="#654321" stroke="currentColor" strokeWidth="0.8"/>
+        <circle cx="42" cy="38" r="3" fill="#8B4513" stroke="currentColor" strokeWidth="0.8"/>
+        <circle cx="52" cy="38" r="3" fill="#654321" stroke="currentColor" strokeWidth="0.8"/>
+        <circle cx="62" cy="38" r="3" fill="#8B4513" stroke="currentColor" strokeWidth="0.8"/>
+      </g>
+      <g stroke="currentColor" strokeWidth="2" opacity="0.6" strokeLinecap="round">
+        <line x1="25" y1="40" x2="15" y2="55"/>
+        <line x1="45" y1="40" x2="40" y2="58"/>
+        <line x1="55" y1="40" x2="52" y2="57"/>
+      </g>
+    </svg>
+  )
+}
+
+function RobotIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 80 70" fill="none" className={className} aria-hidden="true">
+      {/* Antenna */}
+      <line x1="40" y1="8" x2="40" y2="20" stroke="currentColor" strokeWidth="2" />
+      <circle cx="40" cy="6" r="2.5" fill="currentColor" />
+      {/* Head */}
+      <rect x="20" y="20" width="40" height="30" rx="6" fill="currentColor" opacity="0.92" />
+      {/* Eye screen (dark inset) */}
+      <rect x="26" y="28" width="28" height="14" rx="3" fill="#0a0a12" opacity="0.85" />
+      {/* Eyes */}
+      <circle cx="34" cy="35" r="2.5" fill="#D4AF37" />
+      <circle cx="46" cy="35" r="2.5" fill="#D4AF37" />
+      {/* Mouth grille */}
+      <line x1="30" y1="47" x2="50" y2="47" stroke="#0a0a12" strokeWidth="1.2" />
+      <line x1="33" y1="47" x2="33" y2="50" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
+      <line x1="40" y1="47" x2="40" y2="50" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
+      <line x1="47" y1="47" x2="47" y2="50" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
+      {/* Side sensors */}
+      <rect x="14" y="30" width="6" height="10" rx="1.5" fill="currentColor" opacity="0.85" />
+      <rect x="60" y="30" width="6" height="10" rx="1.5" fill="currentColor" opacity="0.85" />
+      {/* Shoulders / body hint */}
+      <path d="M 25,50 L 22,58 Q 40,64 58,58 L 55,50 Z" fill="currentColor" opacity="0.85" />
+      {/* Neck bolt */}
+      <rect x="37" y="50" width="6" height="2" fill="#0a0a12" opacity="0.6" />
+    </svg>
+  )
+}
 // Lazy-load Culture (airdrops) tab — only mounted when the user clicks Culture
 const CultureTab = lazy(() => import('@/components/culture/CultureTab'))
 
@@ -961,7 +1031,7 @@ function StakingPageInner() {
         {statusMsg && <div className="text-center mb-4 text-sm text-yellow-400">{statusMsg}</div>}
 
         {/* ─── Staking Pools (unified table) ────────────────────────────── */}
-        <div className="bg-card border border-[#D4AF37]/20 rounded-2xl overflow-hidden mb-6">
+        <div className="graduated-border bg-card border border-[#D4AF37]/40 rounded-2xl overflow-hidden mb-6">
           <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
             <div className="flex items-center gap-2">
               <Coins className="w-5 h-5 text-[#D4AF37]" />
@@ -981,107 +1051,15 @@ function StakingPageInner() {
             <div></div>
           </div>
 
-          {/* ── Row 1: AIDA → SUI (legacy) ────────────────────────────── */}
+          {/* ── Pool 1: AIDA → AIDA (AIDA-pair fees) — shown on top ────── */}
           <div className="border-b border-white/5">
-            <button
-              onClick={() => setExpandedPool(expandedPool === 'sui' ? null : 'sui')}
-              className="w-full grid grid-cols-1 md:grid-cols-[2fr_0.8fr_1.2fr_1.2fr_auto] gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors text-left"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#FFD700] flex items-center justify-center shrink-0">
-                  <Coins className="w-5 h-5 text-white" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-semibold">$AIDA</div>
-                  <div className="text-xs text-muted-foreground">SUI-pair fees</div>
-                </div>
-              </div>
-              <div className="flex items-center">
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                  SUI
-                </span>
-              </div>
-              <div className="flex items-center">
-                <span className="font-bold tabular-nums">{v3Staked.toFixed(2)}</span>
-                <span className="text-xs text-muted-foreground ml-1">AIDA</span>
-              </div>
-              <div className="flex items-center">
-                <div>
-                  <span className="font-bold tabular-nums text-green-400">{liveRewards.toFixed(4)}</span>
-                  <span className="text-xs text-muted-foreground ml-1">SUI</span>
-                  {stakerEarned > 0n && (
-                    <div className="text-[10px] text-green-400/80">✅ claimable</div>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center justify-end">
-                <span className="text-xs text-[#D4AF37] flex items-center gap-1">
-                  {expandedPool === 'sui' ? 'Hide' : 'Manage'}
-                  <span className={`transition-transform ${expandedPool === 'sui' ? 'rotate-180' : ''}`}>▾</span>
-                </span>
-              </div>
-            </button>
-
-            {expandedPool === 'sui' && (
-              <div className="px-5 pb-5 pt-2 bg-background/30 border-t border-white/5">
-                <div className="mb-3">
-                  <label className="text-sm text-muted-foreground mb-2 block">Stake AIDA</label>
-                  <div className="flex gap-3">
-                    <div className="flex-1 relative">
-                      <input
-                        type="number"
-                        placeholder="Amount to stake"
-                        value={stakedAmount}
-                        onChange={(e) => setStakedAmount(e.target.value)}
-                        className="w-full bg-background border border-border rounded-xl py-3 px-4 pr-16"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setStakedAmount(aidaBalance > 0 ? aidaBalance.toString() : '')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs bg-[#D4AF37]/20 text-[#D4AF37] rounded"
-                      >
-                        MAX
-                      </button>
-                    </div>
-                    <button
-                      onClick={handleStake}
-                      disabled={loading || !stakedAmount || !aidaPoolExists}
-                      className="px-6 py-3 bg-[#D4AF37] rounded-xl font-semibold disabled:opacity-50"
-                    >
-                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Stake'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleUnstake}
-                    disabled={loading || v3Staked <= 0}
-                    className="flex-1 py-3 bg-red-500/20 border border-red-500/30 rounded-xl text-red-400 disabled:opacity-50"
-                  >
-                    Unstake All
-                  </button>
-                  <button
-                    onClick={handleClaim}
-                    disabled={loading || (stakerEarned <= 0n && liveRewards <= 0)}
-                    className="flex-1 py-3 bg-green-500/20 border border-green-500/30 rounded-xl text-green-400 font-semibold disabled:opacity-50"
-                  >
-                    Claim {liveRewards.toFixed(6)} SUI
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── Row 2: AIDA → AIDA (fork) ─────────────────────────────── */}
-          <div>
             <button
               onClick={() => setExpandedPool(expandedPool === 'aida' ? null : 'aida')}
               className="w-full grid grid-cols-1 md:grid-cols-[2fr_0.8fr_1.2fr_1.2fr_auto] gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors text-left"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/60 to-[#FFD700]/40 flex items-center justify-center shrink-0">
-                  <Coins className="w-5 h-5 text-white" />
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#FFD700] flex items-center justify-center shrink-0 shadow-md shadow-[#D4AF37]/20">
+                  <RobotIcon className="w-6 h-6 text-black" />
                 </div>
                 <div className="min-w-0">
                   <div className="font-semibold">$AIDA</div>
@@ -1178,6 +1156,98 @@ function StakingPageInner() {
               </div>
             )}
           </div>
+          {/* ── Pool 2: AIDA → SUI (legacy, SUI-pair fees) ─────────────── */}
+          <div>
+            <button
+              onClick={() => setExpandedPool(expandedPool === 'sui' ? null : 'sui')}
+              className="w-full grid grid-cols-1 md:grid-cols-[2fr_0.8fr_1.2fr_1.2fr_auto] gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#FFD700] flex items-center justify-center shrink-0 shadow-md shadow-[#D4AF37]/20">
+                  <VikingBoatIcon className="w-6 h-6 text-black" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold">$AIDA</div>
+                  <div className="text-xs text-muted-foreground">SUI-pair fees</div>
+                </div>
+              </div>
+              <div className="flex items-center">
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  SUI
+                </span>
+              </div>
+              <div className="flex items-center">
+                <span className="font-bold tabular-nums">{v3Staked.toFixed(2)}</span>
+                <span className="text-xs text-muted-foreground ml-1">AIDA</span>
+              </div>
+              <div className="flex items-center">
+                <div>
+                  <span className="font-bold tabular-nums text-green-400">{liveRewards.toFixed(4)}</span>
+                  <span className="text-xs text-muted-foreground ml-1">SUI</span>
+                  {stakerEarned > 0n && (
+                    <div className="text-[10px] text-green-400/80">✅ claimable</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-end">
+                <span className="text-xs text-[#D4AF37] flex items-center gap-1">
+                  {expandedPool === 'sui' ? 'Hide' : 'Manage'}
+                  <span className={`transition-transform ${expandedPool === 'sui' ? 'rotate-180' : ''}`}>▾</span>
+                </span>
+              </div>
+            </button>
+
+            {expandedPool === 'sui' && (
+              <div className="px-5 pb-5 pt-2 bg-background/30 border-t border-white/5">
+                <div className="mb-3">
+                  <label className="text-sm text-muted-foreground mb-2 block">Stake AIDA</label>
+                  <div className="flex gap-3">
+                    <div className="flex-1 relative">
+                      <input
+                        type="number"
+                        placeholder="Amount to stake"
+                        value={stakedAmount}
+                        onChange={(e) => setStakedAmount(e.target.value)}
+                        className="w-full bg-background border border-border rounded-xl py-3 px-4 pr-16"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setStakedAmount(aidaBalance > 0 ? aidaBalance.toString() : '')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs bg-[#D4AF37]/20 text-[#D4AF37] rounded"
+                      >
+                        MAX
+                      </button>
+                    </div>
+                    <button
+                      onClick={handleStake}
+                      disabled={loading || !stakedAmount || !aidaPoolExists}
+                      className="px-6 py-3 bg-[#D4AF37] rounded-xl font-semibold disabled:opacity-50"
+                    >
+                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Stake'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleUnstake}
+                    disabled={loading || v3Staked <= 0}
+                    className="flex-1 py-3 bg-red-500/20 border border-red-500/30 rounded-xl text-red-400 disabled:opacity-50"
+                  >
+                    Unstake All
+                  </button>
+                  <button
+                    onClick={handleClaim}
+                    disabled={loading || (stakerEarned <= 0n && liveRewards <= 0)}
+                    className="flex-1 py-3 bg-green-500/20 border border-green-500/30 rounded-xl text-green-400 font-semibold disabled:opacity-50"
+                  >
+                    Claim {liveRewards.toFixed(6)} SUI
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
           {/* ── Navi Protocol Section ── */}
           <div className="mb-8 bg-gradient-to-br from-teal-500/8 to-blue-500/5 border border-teal-500/20 rounded-2xl p-5">
