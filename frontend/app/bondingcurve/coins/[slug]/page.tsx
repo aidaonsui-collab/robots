@@ -703,13 +703,39 @@ function TradeTab({ token, poolData, pairType, onTradeSuccess }: { token: typeof
       if (pairType === 'AIDA') {
         const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
         if (!aidaCoins.length) throw new Error('No AIDA coins in wallet')
-        const base = tx.object(aidaCoins[0].coinObjectId)
-        for (let i = 1; i < aidaCoins.length; i++) {
-          tx.moveCall({
-            target: '0x2::pay::join',
-            typeArguments: [AIDA_COIN_TYPE],
-            arguments: [base, tx.object(aidaCoins[i].coinObjectId)],
-          })
+
+        // Pick the minimum set of AIDA coin objects that covers coinAmount.
+        // Merging every AIDA coin and splitting from the union via a
+        // pay::join moveCall caused Slush to flag the user's ENTIRE AIDA
+        // balance as "Potential coin outflow" on every buy — the wallet
+        // can't analyse moveCall outputs, so any input coin gets marked
+        // as fully at risk. Touching only the coins we need caps the
+        // scary display at roughly the real spend.
+        const sorted = [...aidaCoins].sort((a, b) =>
+          Number(BigInt(b.balance) - BigInt(a.balance))
+        )
+        const selected: typeof aidaCoins = []
+        let accumulated = 0n
+        for (const c of sorted) {
+          selected.push(c)
+          accumulated += BigInt(c.balance)
+          if (accumulated >= coinAmount) break
+        }
+        if (accumulated < coinAmount) {
+          throw new Error(
+            `Insufficient AIDA balance: need ${Number(coinAmount) / 1e9} AIDA, have ${Number(accumulated) / 1e9}`
+          )
+        }
+
+        // Use the PTB's native mergeCoins primitive (not a pay::join
+        // moveCall) so Slush's tx analyzer can trace balance flow and
+        // show an accurate outflow estimate.
+        const base = tx.object(selected[0].coinObjectId)
+        if (selected.length > 1) {
+          tx.mergeCoins(
+            base,
+            selected.slice(1).map(c => tx.object(c.coinObjectId))
+          )
         }
         const [split] = tx.splitCoins(base, [coinAmount])
         suiCoin = split
