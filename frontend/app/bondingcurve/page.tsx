@@ -259,8 +259,15 @@ export default function BondingCurvePage() {
     }
   })
 
-  const spotlightToken = filteredTokens.length > 0 ? filteredTokens[0] : null
-  const gridTokens = filteredTokens.length > 1 ? filteredTokens.slice(1) : []
+  // Spotlight is always the highest-market-cap token in the current tab,
+  // regardless of the user's selected sort. Grid is whatever's left, in
+  // the user's selected sort order.
+  const spotlightToken = filteredTokens.length > 0
+    ? [...filteredTokens].sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0))[0]
+    : null
+  const gridTokens = spotlightToken
+    ? filteredTokens.filter(t => t.poolId !== spotlightToken.poolId)
+    : filteredTokens
 
   const sortLabels: Record<SortType, string> = {
     marketcap: 'Market Cap',
