@@ -17,10 +17,20 @@ module moonbags_aida::moonbags {
     use moonbags_aida::moonbags_stake::{Self, Configuration as StakeConfig};
     use moonbags_aida::moonbags_token_lock::{Self, Configuration as TokenLockConfig};
 
+    // V4 upgrade (2026-04-23): Cetus auto-migration deps. Added via upgrade on
+    // top of the live V3 package — no struct layout changes, so all existing
+    // pools / shared objects carry over unchanged. Admin (or a cron watching
+    // PoolMigratingEvent) calls `init_cetus_aida_pool` after each graduation
+    // to create the Coin<Token, AIDA> Cetus pool and burn the LP position.
+    use cetus_clmm::factory::Pools;
+    use cetus_clmm::pool_creator;
+    use cetus_clmm::config::GlobalConfig;
+    use lp_burn::lp_burn::{Self, BurnManager};
+
     // === Constants Config ===
     const DEFAULT_THRESHOLD: u64 = 2000000000000; // 2000 SUI
     const MINIMUM_THRESHOLD: u64 = 1000000000000; // 1000 SUI minimum
-    const VERSION: u64 = 3;
+    const VERSION: u64 = 4;
     const FEE_DENOMINATOR: u64 = 10000;
     const DISTRIBUTE_FEE_LOCK_DURATION_MS: u64 = 300_000; // 5 minutes
     // Deprecated — fee now lives on `Configuration.pool_creation_fee`,
@@ -41,6 +51,9 @@ module moonbags_aida::moonbags {
     const POOL_CREATION_TIMESTAMP_FIELD: vector<u8> = b"pool_creation_timestamp";
     const BUY_BLOCK_DURATION_FIELD: vector<u8> = b"buy_block_duration";
     const LOCK_BUY_DURATION_FIELD: vector<u8> = b"lock_buy_duration";
+    // V4: stores the Cetus LP burn proof on the completed bonding pool so
+    // anyone can verify liquidity was locked.
+    const BURN_PROOF_FIELD: vector<u8> = b"burn_proof";
 
     const EInvalidInput: u64 = 1;
     const ENotEnoughThreshold: u64 = 2;
@@ -1191,6 +1204,83 @@ module moonbags_aida::moonbags {
     public(package) fun join_sui_for_testing<Token>(pool: &mut Pool<Token>, coin_sui: Coin<AIDA>) {
         pool.virtual_sui_reserves = pool.virtual_sui_reserves + coin::value(&coin_sui);
         coin::join(&mut pool.real_sui_reserves, coin_sui);
+    }
+
+    // === V4 Cetus auto-migration ===========================================
+    // Called after a bonding pool has filled and `transfer_pool` dumped its
+    // `real_token_reserves` + `real_sui_reserves` (as Coin<AIDA>) to the
+    // admin wallet. The admin (or a cron watching `PoolMigratingEvent`)
+    // feeds those coins back in here to atomically spin up a Cetus
+    // Coin<Token, AIDA> pool, burn the returned LP position with lp_burn,
+    // and record the burn proof on the bonding pool so anyone can verify
+    // liquidity is locked. Any residual coins that don't fit the range
+    // return to the admin in the same tx.
+    //
+    // Mirror of `moonbags::init_cetus_pool` in the SUI fork — tick math
+    // (spacing 200, -443600..443600, Q64 sqrt price) is pool-agnostic.
+    public entry fun init_cetus_aida_pool<Token>(
+        admin: address,
+        coin_aida: Coin<AIDA>,
+        coin_token: Coin<Token>,
+        pool: &mut Pool<Token>,
+        cetus_burn_manager: &mut BurnManager,
+        cetus_pools: &mut Pools,
+        cetus_config: &mut GlobalConfig,
+        metadata_aida: &CoinMetadata<AIDA>,
+        metadata_token: &CoinMetadata<Token>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        assert!(pool.is_completed, EPoolNotComplete);
+
+        let token_amount = coin::value<Token>(&coin_token) as u256;
+        let aida_amount = coin::value<AIDA>(&coin_aida) as u256;
+
+        let icon_url = if (coin::get_icon_url<Token>(metadata_token).is_some()) {
+            coin::get_icon_url<Token>(metadata_token).extract().inner_url().to_string()
+        } else {
+            string::utf8(b"")
+        };
+
+        // Sui's Cetus expects Q64.64 sqrt price. 340282366920938463463374607431768211456 = 2^128.
+        let (position, coin_token_refund, coin_aida_refund) = pool_creator::create_pool_v2<Token, AIDA>(
+            cetus_config,
+            cetus_pools,
+            200, // tick spacing — Cetus standard
+            sqrt(340282366920938463463374607431768211456 * aida_amount / token_amount),
+            icon_url,
+            4294523696, // lower tick (full-range for tick_spacing=200)
+            443600,     // upper tick
+            coin_token,
+            coin_aida,
+            metadata_token,
+            metadata_aida,
+            true, // fix_amount_a: use token_amount as exact, AIDA side adjusts
+            clock,
+            ctx
+        );
+
+        let burn_proof = lp_burn::burn_lp_v2(cetus_burn_manager, position, ctx);
+        dynamic_object_field::add(&mut pool.id, BURN_PROOF_FIELD, burn_proof);
+
+        // Any residual coins returned from Cetus (rounding dust or single-sided
+        // liquidity on an off-peg first buy) go back to the admin.
+        transfer::public_transfer<Coin<Token>>(coin_token_refund, admin);
+        transfer::public_transfer<Coin<AIDA>>(coin_aida_refund, admin);
+    }
+
+    // Integer square root (u256 → u128), Newton's method. Copied from the
+    // SUI fork — needed to build the Q64 sqrt price for Cetus init.
+    fun sqrt(number: u256) : u128 {
+        assert!(number > 0, EInvalidInput);
+        let mut result = number;
+        let mut next_estimate = (number + 1) / 2;
+        while (next_estimate < result) {
+            result = next_estimate;
+            let sum = next_estimate + number / next_estimate;
+            next_estimate = sum / 2;
+        };
+        result as u128
     }
 
     #[test_only]
