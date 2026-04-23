@@ -99,6 +99,9 @@ export default function CreateTokenPage() {
   const [bondingDex, setBondingDex] = useState<0 | 1>(0)
   const [targetRaise, setTargetRaise] = useState('2000')
   const [pairType, setPairType] = useState<PairType>('SUI')
+  // Live wallet balance of whichever pair coin is currently selected.
+  // Refetched whenever pairType flips or the wallet connects.
+  const [walletBalance, setWalletBalance] = useState(0)
 
   // Live on-chain `pool_creation_fee` from the selected pair's Configuration.
   // Refetches whenever the user flips SUI ↔ AIDA so the fee shown always
@@ -112,6 +115,21 @@ export default function CreateTokenPage() {
       setTargetRaise(String(MIN_AIDA))
     }
   }, [pairType])
+
+  // Fetch the connected wallet's balance of whichever pair coin is
+  // currently selected. Both SUI and AIDA have 9 decimals so the same
+  // div-by-1e9 works for both. Zero if no wallet.
+  useEffect(() => {
+    if (!address) { setWalletBalance(0); return }
+    let cancelled = false
+    const coinType = pairType === 'AIDA' ? AIDA_COIN_TYPE : '0x2::sui::SUI'
+    suiClient.getBalance({ owner: address, coinType })
+      .then(({ totalBalance }) => {
+        if (!cancelled) setWalletBalance(Number(totalBalance) / 1e9)
+      })
+      .catch(() => { if (!cancelled) setWalletBalance(0) })
+    return () => { cancelled = true }
+  }, [pairType, address, suiClient])
 
   useEffect(() => {
     const isAida = pairType === 'AIDA'
@@ -647,7 +665,7 @@ export default function CreateTokenPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-gray-300">Amount</label>
-                <span className="text-xs text-gray-500">Balance: 3.99 SUI</span>
+                <span className="text-xs text-gray-500">Balance: {walletBalance.toFixed(2)} {pairType}</span>
               </div>
               <div className="relative">
                 <input
@@ -664,7 +682,7 @@ export default function CreateTokenPage() {
                 {[25, 50, 75, 100].map(pct => (
                   <button
                     key={pct}
-                    onClick={() => setFirstBuyAmount(((3.99 * pct) / 100).toFixed(2))}
+                    onClick={() => setFirstBuyAmount(((walletBalance * pct) / 100).toFixed(2))}
                     className="flex-1 py-2 rounded-lg border border-gray-700 text-gray-400 text-sm hover:border-purple-500/50 hover:text-white transition-colors"
                   >
                     {pct}%
