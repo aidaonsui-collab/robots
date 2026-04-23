@@ -7,6 +7,7 @@ import {
   storeResponse,
 } from '@/lib/agent-worker'
 import { getAgentWallet, loadAgentKeypair, getAgentSuiBalance, getAgentNaviPosition } from '@/lib/agent-wallet'
+import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 import { SuiClient, getFullnodeUrl } from '@mysten/sui/client'
 import { Transaction } from '@mysten/sui/transactions'
 
@@ -195,6 +196,38 @@ const AGENT_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'bc_buy',
+      description: 'Buy an AIDA-paired bonding-curve token on Odyssey, paying from your own AIDA balance. Specify the full token coin type (like "0x…::sword::SWORD") and how much AIDA to spend. Optionally pass min_tokens_out for slippage protection (units: 6-decimal token base units; omit to accept any price).',
+      parameters: {
+        type: 'object',
+        properties: {
+          coin_type: { type: 'string', description: 'Full token coin type, e.g. "0xc9ec…::nout::NUT"' },
+          amount_aida: { type: 'number', description: 'AIDA to spend (whole units, e.g. 25 for 25 AIDA)' },
+          min_tokens_out: { type: 'number', description: 'Optional minimum tokens to receive in 6-decimal base units. Omit for "any price" (not recommended).' },
+        },
+        required: ['coin_type', 'amount_aida'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'bc_sell',
+      description: 'Sell an AIDA-paired bonding-curve token you hold back into AIDA. Specify the full token coin type and how many tokens to sell. Optionally pass min_aida_out (in AIDA mist: 10^9 per AIDA) for slippage protection.',
+      parameters: {
+        type: 'object',
+        properties: {
+          coin_type: { type: 'string', description: 'Full token coin type' },
+          amount_tokens: { type: 'number', description: 'Tokens to sell (whole units, 6-decimal tokens, e.g. 1000 for 1,000 tokens)' },
+          min_aida_out: { type: 'number', description: 'Optional minimum AIDA to receive in mist (10^9 per AIDA). Omit for "any price".' },
+        },
+        required: ['coin_type', 'amount_tokens'],
+      },
+    },
+  },
 ]
 
 // ─── Agent Wallet Tools ───────────────────────────────────────────────────────
@@ -332,6 +365,150 @@ async function agentNaviWithdraw(agentId: string | undefined, amountSui: number)
   }
 }
 
+// ─── Bonding-curve trade tools (AIDA-pair only, v1) ────────────────────────
+//
+// Both entries target the current AIDA V5 upgrade. Configuration + TokenLock
+// shared objects were minted at the V2 original publish but the V5 upgrade
+// is where `buy_exact_in_with_lock` and `sell` live today. We auto-resolve
+// the per-token Pool via Sui's dynamic_object_field lookup inside the Move
+// entry, so the agent only has to supply a token coin_type.
+//
+// SUI-pair support is a follow-up — V14's buy has 10 args (Cetus objects)
+// and a different Configuration. The bc_* tools return a clear error if the
+// token isn't an AIDA-pair token rather than silently trying the wrong
+// signature.
+
+async function agentBondingCurveBuy(
+  agentId: string | undefined,
+  coinType: string,
+  amountAida: number,
+  minTokensOutBase?: number,
+): Promise<string> {
+  if (!agentId) return 'No agent ID.'
+  if (!coinType || !coinType.includes('::')) return 'Invalid coin_type — must be like "0x…::module::TYPE".'
+  if (!amountAida || amountAida <= 0) return 'amount_aida must be greater than 0.'
+  const keypair = await loadAgentKeypair(agentId)
+  if (!keypair) return 'No wallet keypair for this agent.'
+  const address = keypair.getPublicKey().toSuiAddress()
+
+  try {
+    const amtMist = BigInt(Math.floor(amountAida * 1e9))
+    const minOut = minTokensOutBase && minTokensOutBase > 0
+      ? BigInt(Math.floor(minTokensOutBase))
+      : 1n
+
+    const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
+    if (!aidaCoins.length) return 'No AIDA in wallet. Fund the agent with AIDA first.'
+    const sorted = [...aidaCoins].sort((a, b) => Number(BigInt(b.balance) - BigInt(a.balance)))
+    const selected: typeof aidaCoins = []
+    let accum = 0n
+    for (const c of sorted) {
+      selected.push(c)
+      accum += BigInt(c.balance)
+      if (accum >= amtMist) break
+    }
+    if (accum < amtMist) return `Insufficient AIDA: need ${amountAida}, have ${Number(accum) / 1e9}.`
+
+    const tx = new Transaction()
+    const base = tx.object(selected[0].coinObjectId)
+    if (selected.length > 1) {
+      tx.mergeCoins(base, selected.slice(1).map(c => tx.object(c.coinObjectId)))
+    }
+    const [spendCoin] = tx.splitCoins(base, [amtMist])
+
+    tx.moveCall({
+      target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags::buy_exact_in_with_lock`,
+      typeArguments: [coinType],
+      arguments: [
+        tx.object(MOONBAGS_AIDA_CONTRACT.configuration),
+        tx.object(MOONBAGS_AIDA_CONTRACT.lockConfig),
+        spendCoin,
+        tx.pure.u64(amtMist),
+        tx.pure.u64(minOut),
+        tx.object('0x0000000000000000000000000000000000000000000000000000000000000006'),
+      ],
+    })
+
+    const result = await suiClient.signAndExecuteTransaction({
+      signer: keypair,
+      transaction: tx,
+      options: { showEffects: true },
+    })
+    const ok = result.effects?.status?.status === 'success'
+    const symbol = coinType.split('::').pop() ?? 'TOKEN'
+    if (!ok) {
+      return `Buy failed: ${JSON.stringify(result.effects?.status)}. If the pool is SUI-paired (not AIDA), bc_buy won't work — SUI-pair support is coming in a follow-up.`
+    }
+    return `✅ Bought ${symbol} with ${amountAida} AIDA\nDigest: \`${result.digest}\``
+  } catch (e: any) {
+    return `Buy failed: ${e.message}`
+  }
+}
+
+async function agentBondingCurveSell(
+  agentId: string | undefined,
+  coinType: string,
+  amountTokens: number,
+  minAidaOutMist?: number,
+): Promise<string> {
+  if (!agentId) return 'No agent ID.'
+  if (!coinType || !coinType.includes('::')) return 'Invalid coin_type.'
+  if (!amountTokens || amountTokens <= 0) return 'amount_tokens must be greater than 0.'
+  const keypair = await loadAgentKeypair(agentId)
+  if (!keypair) return 'No wallet keypair for this agent.'
+  const address = keypair.getPublicKey().toSuiAddress()
+
+  try {
+    const amtBase = BigInt(Math.floor(amountTokens * 1e6))
+    const minOut = minAidaOutMist && minAidaOutMist > 0
+      ? BigInt(Math.floor(minAidaOutMist))
+      : 1n
+
+    const { data: tokens } = await suiClient.getCoins({ owner: address, coinType })
+    if (!tokens.length) return `No ${coinType.split('::').pop()} in wallet.`
+    const total = tokens.reduce((s, c) => s + BigInt(c.balance), 0n)
+    if (total < amtBase) return `Insufficient tokens: need ${amountTokens}, have ${Number(total) / 1e6}.`
+
+    const tx = new Transaction()
+    const primary = tx.object(tokens[0].coinObjectId)
+    if (tokens.length > 1) {
+      tx.mergeCoins(primary, tokens.slice(1).map(c => tx.object(c.coinObjectId)))
+    }
+    let sellCoin: any
+    if (amtBase >= total) {
+      sellCoin = primary
+    } else {
+      const [split] = tx.splitCoins(primary, [amtBase])
+      sellCoin = split
+    }
+
+    tx.moveCall({
+      target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags::sell`,
+      typeArguments: [coinType],
+      arguments: [
+        tx.object(MOONBAGS_AIDA_CONTRACT.configuration),
+        sellCoin,
+        tx.pure.u64(minOut),
+        tx.object('0x0000000000000000000000000000000000000000000000000000000000000006'),
+      ],
+    })
+
+    const result = await suiClient.signAndExecuteTransaction({
+      signer: keypair,
+      transaction: tx,
+      options: { showEffects: true },
+    })
+    const ok = result.effects?.status?.status === 'success'
+    const symbol = coinType.split('::').pop() ?? 'TOKEN'
+    if (!ok) {
+      return `Sell failed: ${JSON.stringify(result.effects?.status)}. If the pool is SUI-paired, bc_sell won't work — SUI-pair support is coming in a follow-up.`
+    }
+    return `✅ Sold ${amountTokens} ${symbol} back to AIDA\nDigest: \`${result.digest}\``
+  } catch (e: any) {
+    return `Sell failed: ${e.message}`
+  }
+}
+
 // ─── Tool Execution ──────────────────────────────────────────────────────────
 
 async function executeTool(name: string, args: any, agentId?: string, agentApiKeys?: any[]): Promise<string> {
@@ -349,6 +526,8 @@ async function executeTool(name: string, args: any, agentId?: string, agentApiKe
       case 'wallet_send': return await agentWalletSend(agentId, args.to, args.amount_sui)
       case 'navi_deposit': return await agentNaviDeposit(agentId, args.amount_sui)
       case 'navi_withdraw': return await agentNaviWithdraw(agentId, args.amount_sui)
+      case 'bc_buy': return await agentBondingCurveBuy(agentId, args.coin_type, args.amount_aida, args.min_tokens_out)
+      case 'bc_sell': return await agentBondingCurveSell(agentId, args.coin_type, args.amount_tokens, args.min_aida_out)
       default: return `Unknown tool: ${name}`
     }
   } catch (err: any) {
@@ -885,7 +1064,9 @@ Available tools:
 ${hasWallet ? `- wallet_balance — check your own SUI balance and NAVI lending position (call this immediately when asked about your balance/funds)
 - wallet_send — send SUI to any Sui address
 - navi_deposit — deposit SUI into NAVI lending to earn yield
-- navi_withdraw — withdraw SUI from your NAVI position` : ''}
+- navi_withdraw — withdraw SUI from your NAVI position
+- bc_buy — buy an AIDA-paired bonding-curve token using AIDA from your wallet
+- bc_sell — sell an AIDA-paired bonding-curve token back to AIDA` : ''}
 
 CRITICAL RULES:
 - When asked to "push to GitHub" or "create a repo" → call push_to_github immediately. Do NOT say "I can help with that" or explain how — just call the tool.
