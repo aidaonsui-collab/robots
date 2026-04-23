@@ -6,6 +6,10 @@
     {
       "path": "/api/cron/cetus-migrate-aida",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/cetus-migrate-sui",
+      "schedule": "* * * * *"
     }
   ]
 }
