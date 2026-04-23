@@ -228,6 +228,23 @@ const AGENT_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'x402_fetch',
+      description: 'Fetch an HTTP resource that may be x402-gated (Coinbase\'s Payment Required standard). Works like a normal GET/POST for open URLs — but if the server returns 402 Payment Required, parses the payment requirements (amount, token, network, recipient) and surfaces them so you can decide whether to pay. Use this instead of call_api for any URL advertised as x402-gated (premium APIs, per-call-paid data feeds, x402 bazaar listings). Actual payment settlement requires a matching wallet on the payment network and is not yet wired for Sui agents — the tool will return the structured requirements so you can escalate to the user or skip.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Full URL to fetch' },
+          method: { type: 'string', enum: ['GET', 'POST'], description: 'HTTP method. Default GET.' },
+          body: { type: 'string', description: 'Optional POST body (JSON string).' },
+          headers: { type: 'object', description: 'Optional extra request headers.' },
+        },
+        required: ['url'],
+      },
+    },
+  },
 ]
 
 // ─── Agent Wallet Tools ───────────────────────────────────────────────────────
@@ -509,6 +526,144 @@ async function agentBondingCurveSell(
   }
 }
 
+// ─── x402 client (detection + parsing, v1) ─────────────────────────────────
+//
+// Coinbase x402 revives the HTTP 402 status code so servers can gate a
+// resource behind a stablecoin micropayment. The full protocol is:
+//   1. client fetches URL
+//   2. server responds 402 + PaymentRequirements JSON (body or base64 header)
+//   3. client signs a PaymentPayload with its wallet
+//   4. client retries with X-PAYMENT header
+//   5. server verifies (directly or via a facilitator) and returns 200
+//
+// Production x402 schemes today are primarily EVM (EIP-3009 USDC on
+// Base/OP/Arbitrum) and Solana. Odyssey agents are on Sui — so v1 of
+// this tool does the detection + requirement-parsing half honestly and
+// surfaces the payment details to the agent. That alone unlocks the
+// x402 Bazaar discovery surface (agent can *see* what a premium API
+// would cost). Actual signing + settlement needs either a Sui-native
+// x402 scheme (emerging) or an EVM sub-wallet per agent — both are
+// planned follow-ups.
+
+interface X402PaymentRequirements {
+  scheme: string
+  network: string
+  maxAmountRequired?: string
+  resource?: string
+  description?: string
+  mimeType?: string
+  payTo?: string
+  maxTimeoutSeconds?: number
+  asset?: string
+  extra?: Record<string, any>
+}
+
+interface X402Response {
+  x402Version?: number
+  accepts?: X402PaymentRequirements[]
+  error?: string
+}
+
+function decodeAtomic(raw: string | undefined, assetHint?: string): string {
+  if (!raw) return 'unspecified'
+  // Most x402 deployments use 6-decimal USDC. Surface both atomic and
+  // approx-human values since the caller may not know the asset's decimals.
+  const n = Number(raw)
+  if (!isFinite(n) || n <= 0) return raw
+  const likelyUsdc = assetHint?.toLowerCase().includes('usdc') || assetHint?.toLowerCase().includes('usd')
+  if (likelyUsdc) return `${raw} (≈ ${(n / 1e6).toFixed(6)} USDC)`
+  return raw
+}
+
+async function x402Fetch(
+  url: string,
+  method?: string,
+  body?: string,
+  extraHeaders?: Record<string, string>,
+): Promise<string> {
+  if (!url || !/^https?:\/\//i.test(url)) return 'Invalid URL — must start with http(s)://'
+  const httpMethod = (method || 'GET').toUpperCase()
+  if (!['GET', 'POST'].includes(httpMethod)) return `Unsupported method: ${httpMethod}`
+
+  try {
+    const headers: Record<string, string> = { 'Accept': 'application/json, */*' }
+    if (extraHeaders && typeof extraHeaders === 'object') {
+      for (const [k, v] of Object.entries(extraHeaders)) {
+        if (typeof v === 'string' && !/^(host|content-length)$/i.test(k)) headers[k] = v
+      }
+    }
+    if (httpMethod === 'POST' && body) headers['Content-Type'] = headers['Content-Type'] || 'application/json'
+
+    const res = await fetch(url, {
+      method: httpMethod,
+      headers,
+      body: httpMethod === 'POST' ? body : undefined,
+    })
+
+    // Happy path — no payment needed, return body like call_api would.
+    if (res.status === 200) {
+      const text = await res.text()
+      const truncated = text.length > 4000 ? text.slice(0, 4000) + '\n…[truncated]' : text
+      return `✅ ${httpMethod} ${url} → 200\n\n${truncated}`
+    }
+
+    // Payment required — parse requirements from body or header.
+    if (res.status === 402) {
+      let reqs: X402Response | null = null
+      // Preferred: JSON body (x402 v1.x + v2).
+      try {
+        const clone = res.clone()
+        const json = await clone.json()
+        if (json && (Array.isArray(json.accepts) || typeof json.x402Version === 'number')) {
+          reqs = json as X402Response
+        }
+      } catch { /* fall through to header */ }
+      // Fallback: PAYMENT-REQUIRED header with base64-encoded JSON.
+      if (!reqs) {
+        const hdr = res.headers.get('payment-required') ?? res.headers.get('x-payment-required')
+        if (hdr) {
+          try {
+            const decoded = Buffer.from(hdr, 'base64').toString('utf-8')
+            reqs = JSON.parse(decoded) as X402Response
+          } catch { /* ignore */ }
+        }
+      }
+
+      if (!reqs || !reqs.accepts?.length) {
+        const bodyText = await res.text().catch(() => '')
+        return `⚠️ ${url} returned 402 Payment Required, but the response didn't include parseable x402 PaymentRequirements.\nBody: ${bodyText.slice(0, 500)}`
+      }
+
+      const lines: string[] = [
+        `💸 ${url} requires payment (x402${reqs.x402Version ? ` v${reqs.x402Version}` : ''}).`,
+        ``,
+        `This agent cannot settle x402 payments yet — Sui-native signing + an EVM sub-wallet are planned follow-ups. Report these requirements to the user so they can authorize or skip.`,
+        ``,
+        `Accepted payment options (${reqs.accepts.length}):`,
+      ]
+      reqs.accepts.forEach((a, i) => {
+        lines.push(
+          ``,
+          `  [${i + 1}] scheme: ${a.scheme}  ·  network: ${a.network}`,
+          `      amount: ${decodeAtomic(a.maxAmountRequired, a.asset)}`,
+          a.asset ? `      asset: \`${a.asset}\`` : '',
+          a.payTo ? `      payTo: \`${a.payTo}\`` : '',
+          a.description ? `      note: ${a.description}` : '',
+          a.maxTimeoutSeconds ? `      timeout: ${a.maxTimeoutSeconds}s` : '',
+        )
+      })
+      if (reqs.error) lines.push(``, `Error hint: ${reqs.error}`)
+      return lines.filter(Boolean).join('\n')
+    }
+
+    // Any other status — surface as-is so the agent can reason about it.
+    const text = await res.text().catch(() => '')
+    return `⚠️ ${httpMethod} ${url} → ${res.status} ${res.statusText}\n${text.slice(0, 1000)}`
+  } catch (e: any) {
+    return `x402_fetch failed: ${e.message}`
+  }
+}
+
 // ─── Tool Execution ──────────────────────────────────────────────────────────
 
 async function executeTool(name: string, args: any, agentId?: string, agentApiKeys?: any[]): Promise<string> {
@@ -528,6 +683,7 @@ async function executeTool(name: string, args: any, agentId?: string, agentApiKe
       case 'navi_withdraw': return await agentNaviWithdraw(agentId, args.amount_sui)
       case 'bc_buy': return await agentBondingCurveBuy(agentId, args.coin_type, args.amount_aida, args.min_tokens_out)
       case 'bc_sell': return await agentBondingCurveSell(agentId, args.coin_type, args.amount_tokens, args.min_aida_out)
+      case 'x402_fetch': return await x402Fetch(args.url, args.method, args.body, args.headers)
       default: return `Unknown tool: ${name}`
     }
   } catch (err: any) {
@@ -1061,6 +1217,7 @@ Available tools:
 - generate_file — create downloadable files (use for any code, scripts, configs)
 - push_to_github — push files to a GitHub repo${hasGithub ? ` (GitHub connected: @${agent.githubUsername})` : ' (not connected yet)'}
 - call_api — make HTTP GET/POST requests to any public API (fetch data, query RPCs, call webhooks, etc.)
+- x402_fetch — fetch an HTTP resource that may be x402 payment-gated (Coinbase's 402 standard). Returns normal response for open URLs; surfaces payment requirements (amount, network, asset, payTo) for 402 responses so you can report to the user or skip. Use this specifically when a URL is advertised as x402-gated.
 ${hasWallet ? `- wallet_balance — check your own SUI balance and NAVI lending position (call this immediately when asked about your balance/funds)
 - wallet_send — send SUI to any Sui address
 - navi_deposit — deposit SUI into NAVI lending to earn yield
