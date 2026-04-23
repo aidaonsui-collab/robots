@@ -35,6 +35,7 @@ const HIDDEN_TOKENS = new Set([
   '0x2e9d593c61ae85792a32244d974169e2d9ff09ed8eec57e3e88bd2773eb84d2c::dulce::DULCE',                   // DULCE (duplicate)
   '0x5b5d441190e4fb43735f23dbc4b329c96e996a0beb53a5993a6e052e3adbf83e::shine::SHINE',                   // SHINE
   '0xcf7eeb3d4fc53529996e8903e739cb703528e9b60dd07405b2a3d65afb29d3ee::nav::NAV',                       // NAV
+  '0x77b8fd2ad820cc3602c7d81e36e5a19e6c7af584d5a5dffb9b47a705b1d64fba::suixseven::SUIXSEVEN',           // SUIXSEVEN (test launch)
   // Spam / abusive names
   '0x79d820e01cb8e14feded3002dca8a89643bca25ea7adb9c53e5b288f4266c9de::fuck::FUCK',
   '0x3197fc9b14ae9f468805e23f5aa679e78ae68e9e71c3570677f9e7a40dd39557::texmother::TEXMOTHER',
