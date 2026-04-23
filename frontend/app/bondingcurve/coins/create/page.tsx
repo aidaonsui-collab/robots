@@ -21,7 +21,7 @@ import { MOONBAGS_AIDA_CONTRACT, MOONBAGS_AIDA_CONTRACT_V3, AIDA_COIN_TYPE, AIDA
 // via `setter_pool_creation_fee`. These fallbacks are used only while the
 // on-chain read is in flight or if it fails.
 const DEFAULT_FEE_SUI_MIST  = BigInt(5_000_000_000)           // 5 SUI
-const DEFAULT_FEE_AIDA_MIST = BigInt(200_000_000_000_000)     // 200,000 AIDA
+const DEFAULT_FEE_AIDA_MIST = BigInt(1_000_000_000_000)       // 1,000 AIDA (matches on-chain setter target)
 type PairType = 'SUI' | 'AIDA';
 // Pool virtual reserves (from V12 + AIDA configs, both unified 2026-04-20):
 //   I = initial_virtual_token_reserves =   100_000_000_000_000 (config field)
@@ -108,7 +108,11 @@ export default function CreateTokenPage() {
   // matches what `setter_pool_creation_fee` currently has on mainnet.
   const [creationFeeMist, setCreationFeeMist] = useState<bigint | null>(null)
 
-  const MIN_AIDA = 20_000_000
+  // Minimum graduation threshold for AIDA-pair launches. Contract floor
+  // is MINIMUM_THRESHOLD = 1,000 AIDA (hardcoded in moonbags_aida.move);
+  // we hold the UI floor at 10,000 AIDA to keep pools non-trivial while
+  // still letting smaller experiments through.
+  const MIN_AIDA = 10_000
 
   useEffect(() => {
     if (pairType === 'AIDA' && parseFloat(targetRaise) < MIN_AIDA) {
@@ -152,7 +156,7 @@ export default function CreateTokenPage() {
   }, [pairType, suiClient])
 
   // Both SUI and AIDA use 9 decimals. Round whole-number fees so the UI
-  // reads "5 SUI" / "200,000 AIDA" instead of "5.0000".
+  // reads "5 SUI" / "1,000 AIDA" instead of "5.0000".
   const formatFee = (mist: bigint | null, currency: PairType): string => {
     if (mist == null) return `… ${currency}`
     const tokens = Number(mist) / 1e9
