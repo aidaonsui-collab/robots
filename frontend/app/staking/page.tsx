@@ -125,6 +125,26 @@ const AIDA_TYPE = AIDA_CONTRACT.fullAddress
 const AIDA_PAIR_PKG     = MOONBAGS_AIDA_CONTRACT.packageId
 const AIDA_PAIR_STK_CFG = MOONBAGS_AIDA_CONTRACT.stakeConfig
 
+// Map an AIDA-pair stakeConfig back to the package it was published
+// under. A stakeConfig can only be passed to move calls on its own
+// publish's package — cross-publish calls abort at the shared-object
+// version assertion. Used to route stake/unstake/claim writes to the
+// bundle where the user's position actually lives.
+const AIDA_PAIR_CFG_TO_PKG: Record<string, string> = {
+  // V2 — 2026-04-21 republish with admin setter
+  '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09':
+    '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313',
+  // V3 — 2026-04-23 republish with Cetus auto-migration
+  '0xf87f6cdd86ede677b85e8eb85e8b2ce856b348e4aad6c08c0d4ef3fbe2d1dcbb':
+    '0x69079609ad446344ec8114b9466e04e9210daae60c9289e72037bc5e8cd54a3c',
+  // PREV — 2026-04-18 original AIDA-fork publish
+  '0x64c07e79494e0f51923c0a7a524a9429605d464e3583be3f9b20ce3765a92cd5':
+    '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8',
+}
+function pkgForAidaPairCfg(cfg: string): string {
+  return AIDA_PAIR_CFG_TO_PKG[cfg.toLowerCase()] ?? AIDA_PAIR_PKG
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 async function rpc(method: string, params: any[]) {
   const res = await fetch(SUI_RPC, {
@@ -212,6 +232,11 @@ function StakingPageInner() {
   const [aidaPairStakerBal, setAidaPairStakerBal] = useState<bigint>(BigInt(0))
   const [aidaPairStakerIdx, setAidaPairStakerIdx] = useState<bigint>(BigInt(0))
   const [aidaPairPoolIdx,   setAidaPairPoolIdx]   = useState<bigint>(BigInt(0))
+  // Config where this wallet's AIDA-pair position actually lives. Writes
+  // (stake/unstake/claim) must target the matching package + stakeConfig
+  // bundle — hardcoding V3 makes Unstake/Claim revert for users staked
+  // on V2 (0xd2da…) or on the original PREV publish.
+  const [aidaPairActiveCfg, setAidaPairActiveCfg] = useState<string>(AIDA_PAIR_STK_CFG)
   const [claimingAidaPair,  setClaimingAidaPair]  = useState(false)
 
 
@@ -325,17 +350,20 @@ function StakingPageInner() {
   // — AIDA pairs are newly launched so most wallets won't have a position.
   const fetchAidaPairRewards = useCallback(async () => {
     if (!address) return
-    // Check BOTH V2 (0xd2da…) and V3 (0xf87f6cd…) AIDA-pair stake configs.
-    // Users who staked in V2 before v3 published still have positions
-    // there — checking only MOONBAGS_AIDA_CONTRACT (now aliased to V3)
-    // hid them. Sum positions across both. Also paginate within each.
-    const V2_STK_CFG = '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09'
-    const V3_STK_CFG = AIDA_PAIR_STK_CFG  // MOONBAGS_AIDA_CONTRACT.stakeConfig = V3
-    const configs = [V3_STK_CFG, V2_STK_CFG]
+    // Check every AIDA-pair stake config ever shipped. Users may hold
+    // positions on V2 (0xd2da…), V3 (0xf87f6cd…), or the original PREV
+    // publish. Pick the config where THIS wallet has a real position —
+    // picking the first pool that exists breaks wallets staked on older
+    // configs when a newer (empty) AIDA pool has been initialized.
+    const V2_STK_CFG   = '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09'
+    const V3_STK_CFG   = AIDA_PAIR_STK_CFG  // MOONBAGS_AIDA_CONTRACT.stakeConfig = V3
+    const PREV_STK_CFG = '0x64c07e79494e0f51923c0a7a524a9429605d464e3583be3f9b20ce3765a92cd5'
+    // Ordered newest → oldest. The user-position probe below picks the
+    // first config where the wallet actually has a staking account.
+    const configs = [V3_STK_CFG, V2_STK_CFG, PREV_STK_CFG]
 
     try {
-      let foundPool: { objectId: string; configId: string } | null = null
-      for (const cfg of configs) {
+      const findAidaPoolIn = async (cfg: string): Promise<string | null> => {
         let cursor: string | null = null
         for (let page = 0; page < 20; page++) {
           const fields: any = await rpc('suix_getDynamicFields', [cfg, cursor, 50])
@@ -343,14 +371,20 @@ function StakingPageInner() {
           const p = pools.find((x: any) =>
             x.objectType?.includes('StakingPool') && x.objectType?.includes('aida::AIDA')
           )
-          if (p) { foundPool = { objectId: p.objectId, configId: cfg }; break }
+          if (p?.objectId) return p.objectId
           if (!fields?.hasNextPage || !fields?.nextCursor) break
           cursor = fields.nextCursor
         }
-        if (foundPool) break
+        return null
       }
 
-      if (!foundPool) {
+      // Resolve every (config → AIDA pool) pair that exists on-chain.
+      const poolByConfig = await Promise.all(
+        configs.map(async cfg => ({ cfg, poolId: await findAidaPoolIn(cfg) }))
+      )
+      const existingPools = poolByConfig.filter(x => x.poolId !== null) as { cfg: string; poolId: string }[]
+
+      if (existingPools.length === 0) {
         setAidaPairPoolExists(false)
         setAidaPairPoolId(null)
         setAidaPairRewards(0)
@@ -360,30 +394,54 @@ function StakingPageInner() {
         setAidaPairPoolIdx(BigInt(0))
         return
       }
+
+      // Probe each pool for a non-zero position belonging to this wallet;
+      // first hit wins (newest first per config ordering above).
+      let chosen: { poolId: string; cfg: string; stakerFields: any; poolRwdIdx: bigint } | null = null
+      let fallback: { poolId: string; cfg: string; poolRwdIdx: bigint } | null = null
+      for (const { cfg, poolId } of existingPools) {
+        const [stakerField, poolObj] = await Promise.all([
+          rpc('suix_getDynamicFieldObject', [poolId, { type: 'address', value: address }]),
+          rpc('sui_getObject', [poolId, { showContent: true }]),
+        ])
+        const poolRwdIdx = BigInt(poolObj?.data?.content?.fields?.reward_index ?? 0)
+        const f = stakerField?.data?.content?.fields
+        const balance = f ? BigInt(f.balance ?? 0) : 0n
+        const earned  = f ? BigInt(f.earned  ?? 0) : 0n
+        if (balance > 0n || earned > 0n) {
+          chosen = { poolId, cfg, stakerFields: f, poolRwdIdx }
+          break
+        }
+        if (!fallback) fallback = { poolId, cfg, poolRwdIdx }
+      }
+
       setAidaPairPoolExists(true)
-      setAidaPairPoolId(foundPool.objectId)
 
-      const [stakerField, poolObj] = await Promise.all([
-        rpc('suix_getDynamicFieldObject', [foundPool.objectId, { type: 'address', value: address }]),
-        rpc('sui_getObject', [foundPool.objectId, { showContent: true }]),
-      ])
-      const poolRwdIdx = BigInt(poolObj?.data?.content?.fields?.reward_index ?? 0)
-      setAidaPairPoolIdx(poolRwdIdx)
-
-      const f = stakerField?.data?.content?.fields
-      if (!f) {
+      if (!chosen) {
+        // No active position on any config — surface the newest pool so
+        // the UI still renders Init / Stake controls against the right
+        // stakeConfig, with zeros everywhere else.
+        setAidaPairPoolId(fallback!.poolId)
+        setAidaPairPoolIdx(fallback!.poolRwdIdx)
+        setAidaPairActiveCfg(fallback!.cfg)
         setAidaPairRewards(0)
         setAidaPairEarned(BigInt(0))
         setAidaPairStakerBal(BigInt(0))
         setAidaPairStakerIdx(BigInt(0))
         return
       }
+
+      setAidaPairPoolId(chosen.poolId)
+      setAidaPairPoolIdx(chosen.poolRwdIdx)
+      setAidaPairActiveCfg(chosen.cfg)
+
+      const f = chosen.stakerFields
       const balance    = BigInt(f.balance ?? 0)
       const earned     = BigInt(f.earned ?? 0)
       const stakerIdx  = BigInt(f.reward_index ?? 0)
       const MULTIPLIER = BigInt('10000000000000000') // 1e16, contract constant
-      const pending = poolRwdIdx > stakerIdx
-        ? (balance * (poolRwdIdx - stakerIdx)) / MULTIPLIER
+      const pending = chosen.poolRwdIdx > stakerIdx
+        ? (balance * (chosen.poolRwdIdx - stakerIdx)) / MULTIPLIER
         : BigInt(0)
       setAidaPairEarned(earned)
       setAidaPairStakerBal(balance)
@@ -668,11 +726,14 @@ function StakingPageInner() {
     setClaimingAidaPair(true)
     setStatusMsg('Claiming AIDA rewards...')
     try {
+      // Route claim to the package that owns the user's actual stake
+      // config — V2 stakers revert if called through V3 pkg.
+      const pkg = pkgForAidaPairCfg(aidaPairActiveCfg)
       const tx = new Transaction()
       tx.moveCall({
-        target: `${AIDA_PAIR_PKG}::moonbags_stake::claim_staking_pool`,
+        target: `${pkg}::moonbags_stake::claim_staking_pool`,
         typeArguments: [AIDA_TYPE],
-        arguments: [tx.object(AIDA_PAIR_STK_CFG), tx.object(SUI_CLOCK)],
+        arguments: [tx.object(aidaPairActiveCfg), tx.object(SUI_CLOCK)],
       })
       const result = await signAndExecute({ transaction: tx })
       setStatusMsg('Claimed AIDA!')
@@ -721,6 +782,9 @@ function StakingPageInner() {
       if (!coins.length) throw new Error('No AIDA coins found')
 
       const amountMist = BigInt(Math.floor(parseFloat(stakedAmountPair) * 1e9))
+      // Top-up into the same pool the user already has a position in;
+      // otherwise default to the newest (V3) bundle.
+      const pkg = pkgForAidaPairCfg(aidaPairActiveCfg)
       const tx = new Transaction()
       const primary = tx.object(coins[0].coinObjectId)
       if (coins.length > 1) {
@@ -728,9 +792,9 @@ function StakingPageInner() {
       }
       const [stakeCoin] = tx.splitCoins(primary, [amountMist])
       tx.moveCall({
-        target: `${AIDA_PAIR_PKG}::moonbags_stake::stake`,
+        target: `${pkg}::moonbags_stake::stake`,
         typeArguments: [AIDA_TYPE],
-        arguments: [tx.object(AIDA_PAIR_STK_CFG), stakeCoin, tx.object(SUI_CLOCK)],
+        arguments: [tx.object(aidaPairActiveCfg), stakeCoin, tx.object(SUI_CLOCK)],
       })
       await signAndExecute({ transaction: tx })
       setStatusMsg('Staked in AIDA-pair pool!')
@@ -747,12 +811,16 @@ function StakingPageInner() {
     setLoadingPair(true)
     setStatusMsg('Unstaking from AIDA-pair pool...')
     try {
+      // Unstake has to target the publish where the StakingAccount lives
+      // — wallets with legacy V2 positions (0xd2da…) revert if the tx is
+      // routed through V3.
+      const pkg = pkgForAidaPairCfg(aidaPairActiveCfg)
       const tx = new Transaction()
       tx.moveCall({
-        target: `${AIDA_PAIR_PKG}::moonbags_stake::unstake`,
+        target: `${pkg}::moonbags_stake::unstake`,
         typeArguments: [AIDA_TYPE],
         arguments: [
-          tx.object(AIDA_PAIR_STK_CFG),
+          tx.object(aidaPairActiveCfg),
           tx.pure.u64(aidaPairStakerBal),
           tx.object(SUI_CLOCK),
         ],
