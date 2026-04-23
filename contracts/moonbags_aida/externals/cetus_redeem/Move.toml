@@ -1,0 +1,14 @@
+[package]
+name = "CetusRedeem"
+version = "0.0.1"
+published-at = "0x9d2f067d3b9d19ac0f8d2e5c2c393b1760232083e42005b2e5df39c06064d522"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet" }
+MoveSTL = { local = "../move-stl" }
+IntegerMate = { local = "../integer-mate" }
+CetusClmm = { local = "../cetus_clmm" }
+Cetus = { local = "../token/cetus" }
+
+[addresses]
+cetus_redeem = "0x9d2f067d3b9d19ac0f8d2e5c2c393b1760232083e42005b2e5df39c06064d522"

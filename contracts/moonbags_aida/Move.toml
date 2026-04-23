@@ -5,6 +5,9 @@ edition = "2024.beta"
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet" }
 aida = { local = "sources_deps/aida" }
+CetusClmm = { local = "./externals/cetus_clmm" }
+LpBurn = { local = "./externals/lp_burn" }
+TurbosCLMM = { local = "./externals/turbos_clmm" }
 
 [addresses]
 moonbags_aida = "0x0"
