@@ -1513,6 +1513,11 @@ export default function CoinPage() {
   const [refetchCount, setRefetchCount] = useState(0)
   const [holderCount, setHolderCount] = useState<number | null>(null)
   const [caCopied, setCaCopied] = useState(false)
+  // `true` once the initial fetch has exhausted its retries without
+  // finding pool data. Triggers the "couldn't load" UI below instead of
+  // silently falling back to MOCK_TOKEN data (which is what made users
+  // think they needed to refresh).
+  const [loadFailed, setLoadFailed] = useState(false)
 
   // Top-level pairType — derived from poolData, used in handleTrade via closure.
   // TradeTab reads poolData directly as prop, no need to pass pairType down.
@@ -1534,17 +1539,68 @@ export default function CoinPage() {
     setRefetchCount(c => c + 1)
   }, [])
 
-  // Fetch real on-chain data
+  // Fetch real on-chain data, with retry + visible error state.
+  //
+  // Root cause of the "have to refresh multiple times" bug: the original
+  // flow called `fetchPoolToken` once and if it returned null (which it
+  // does on ANY exception — broad try/catch inside tokens.ts) silently
+  // left `poolData` as null and flipped `loading` off. The UI then
+  // rendered MOCK_TOKEN data with "Loading..." as the name — which
+  // looked broken but technically wasn't "loading" anymore. Only a hard
+  // refresh kicked off another attempt.
+  //
+  // New flow:
+  //   1. Retry `fetchPoolToken` up to 3 times with exponential backoff
+  //      (400ms, 1.2s, 3s) before giving up. Handles transient Sui RPC
+  //      hiccups that previously forced a user refresh.
+  //   2. Always flip `loading` off in `finally` so a thrown exception
+  //      doesn't strand the UI in the "loading forever" state either.
+  //   3. If ALL retries fail, set `loadFailed=true` so the render path
+  //      shows a real error card instead of the mock-data fallback.
+  //   4. The periodic 5s poll (below) also resets `loadFailed` on
+  //      success, so recovery happens automatically when the RPC comes
+  //      back online.
   useEffect(() => {
     if (!slug) return
-    // Decode URL-encoded slug (e.g., %3A%3A -> ::)
+    let cancelled = false
     const decodedSlug = decodeURIComponent(slug)
+    const isInitial = refetchCount === 0
 
-    if (refetchCount === 0) setLoading(true)
-    Promise.all([fetchPoolToken(decodedSlug), fetchPoolTrades(decodedSlug)]).then(([tokenData, tradeData]) => {
-      if (tokenData) setPoolData(tokenData)
+    if (isInitial) setLoading(true)
+
+    const attempt = async (): Promise<void> => {
+      const BACKOFFS_MS = isInitial ? [400, 1200, 3000] : [0]
+      let tokenData: PoolToken | null = null
+      let tradeData: TradeEvent[] = []
+
+      for (let i = 0; i < BACKOFFS_MS.length; i++) {
+        if (cancelled) return
+        try {
+          ;[tokenData, tradeData] = await Promise.all([
+            fetchPoolToken(decodedSlug),
+            fetchPoolTrades(decodedSlug),
+          ])
+          if (tokenData) break
+        } catch (err) {
+          console.error(`[coin-page] fetch attempt ${i + 1} failed`, err)
+        }
+        // Null response → wait and retry
+        if (i < BACKOFFS_MS.length - 1 && BACKOFFS_MS[i + 1] > 0) {
+          await new Promise(r => setTimeout(r, BACKOFFS_MS[i + 1]))
+        }
+      }
+
+      if (cancelled) return
+
+      if (tokenData) {
+        setPoolData(tokenData)
+        setLoadFailed(false)
+      } else if (isInitial) {
+        // All retries failed on initial load — show the error state.
+        setLoadFailed(true)
+      }
+
       if (tradeData.length > 0) {
-        // Map TradeEvent to TradeRow
         const mapped: TradeRow[] = tradeData.map(t => ({
           type: t.isBuy ? 'buy' as const : 'sell' as const,
           address: shortenAddr(t.user),
@@ -1555,16 +1611,15 @@ export default function CoinPage() {
           time: formatTimeAgo(t.timestampMs),
           txDigest: t.txDigest || undefined,
         }))
-        // Preserve any optimistic rows whose digest hasn't shown up in the
-        // indexed event list yet — prevents the user's own trade from
-        // flickering out when the poll races the indexer.
+        // Preserve any optimistic rows whose digest hasn't shown up in
+        // the indexed event list yet — prevents the user's own trade
+        // from flickering out when the poll races the indexer.
         setTrades(prev => {
           const confirmedDigests = new Set(mapped.map(t => t.txDigest).filter(Boolean) as string[])
           const unconfirmedOptimistic = prev.filter(t => t.txDigest && !confirmedDigests.has(t.txDigest))
           return [...unconfirmedOptimistic, ...[...mapped].reverse()] // newest first
         })
 
-        // Build price history from trades (oldest first) — include volume/direction for chart
         const history: PricePoint[] = tradeData
           .slice()
           .reverse()
@@ -1574,14 +1629,18 @@ export default function CoinPage() {
             isBuy: t.isBuy,
             suiAmount: t.suiAmount,
           }))
-        // Also add current price as latest point
         if (history.length > 0 && tokenData) {
           history.push({ time: Date.now(), value: tokenData.currentPrice })
         }
         setPriceHistory(history)
       }
-      setLoading(false)
+    }
+
+    attempt().finally(() => {
+      if (!cancelled) setLoading(false)
     })
+
+    return () => { cancelled = true }
   }, [slug, refetchCount])
 
   // Background poll: refetch trades every 5s while the tab is visible so
@@ -1653,6 +1712,38 @@ export default function CoinPage() {
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto" />
           <p className="text-gray-400 text-sm">Loading on-chain data...</p>
+        </div>
+      </main>
+    )
+  }
+
+  // Initial fetch exhausted its retries and we still have nothing
+  // usable. Show a proper error card + manual retry button instead of
+  // the old MOCK_TOKEN fallback, which was easy to mistake for a
+  // half-loaded real page (users thought "refresh to fix" was the
+  // remedy). Background poll also keeps trying every 5s, so this
+  // usually resolves itself.
+  if (loadFailed && !poolData) {
+    return (
+      <main className="min-h-screen pt-16 pb-12 bg-[#070710] flex items-center justify-center px-4">
+        <div className="max-w-md text-center space-y-4">
+          <div className="text-4xl">⚠️</div>
+          <h2 className="text-xl font-semibold text-white">Couldn't load this token</h2>
+          <p className="text-gray-400 text-sm">
+            Sui RPC didn't return pool data after 3 attempts. This usually
+            resolves itself within a few seconds — the page also retries
+            automatically every 5s.
+          </p>
+          <button
+            onClick={() => {
+              setLoadFailed(false)
+              setLoading(true)
+              setRefetchCount(c => c + 1)
+            }}
+            className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium transition"
+          >
+            Try again now
+          </button>
         </div>
       </main>
     )
