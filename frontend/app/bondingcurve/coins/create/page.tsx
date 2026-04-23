@@ -10,7 +10,7 @@ import { Transaction } from '@mysten/sui/transactions'
 import { bcs } from '@mysten/sui/bcs'
 import { Rocket, Upload, Globe, Twitter, MessageCircle, Video, Loader2, CheckCircle } from 'lucide-react'
 import axios from 'axios'
-import { MOONBAGS_CONTRACT_V12, BACKEND_URL, SUI_CLOCK } from '@/lib/contracts';
+import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V13, CETUS_CONTRACT, SUI_METADATA_ID, BACKEND_URL, SUI_CLOCK } from '@/lib/contracts';
 import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 
 // ── Constants ─────────────────────────────────────────────────
@@ -117,7 +117,7 @@ export default function CreateTokenPage() {
     const isAida = pairType === 'AIDA'
     const configId = isAida
       ? MOONBAGS_AIDA_CONTRACT.configuration
-      : MOONBAGS_CONTRACT_V12.configuration
+      : MOONBAGS_CONTRACT_V13.configuration
     const fallback = isAida ? DEFAULT_FEE_AIDA_MIST : DEFAULT_FEE_SUI_MIST
     let cancelled = false
     setCreationFeeMist(null) // show loading until the new value lands
@@ -424,9 +424,11 @@ export default function CreateTokenPage() {
       }
 
       // ── Choose contract based on pair type ──────────────────────
-      // AIDA pairs use moonbags_aida contract (forked from moonbags v12)
-      // SUI pairs use the standard moonbags v12 contract
-      const contract = isAidaPair ? MOONBAGS_AIDA_CONTRACT : MOONBAGS_CONTRACT_V12
+      // AIDA pairs use moonbags_aida contract (forked from moonbags v12,
+      // no DEX selector yet — graduation is admin-managed until AIDA fork
+      // is republished with bonding_dex support).
+      // SUI pairs use V13 which has Cetus/Turbos auto-migration wired in.
+      const contract = isAidaPair ? MOONBAGS_AIDA_CONTRACT : MOONBAGS_CONTRACT_V13
 
       // Warn if AIDA contract not yet deployed
       if (isAidaPair && contract.packageId === '0x0000000000000000000000000000000000000000000000000000000000000000') {
@@ -442,71 +444,70 @@ export default function CreateTokenPage() {
         })
       }
 
-      // Create pool with metadata (moonbags for SUI, moonbags_aida for AIDA).
-      //
-      // === DEX MIGRATION (Cetus/Turbos) ================================
-      // When moonbags-contracts-sui is republished with bonding_dex support,
-      // swap the arguments list for the "DEX-AWARE" block below and update
-      // `contract.*` constants in lib/contracts*.ts to the new package IDs
-      // (Configuration, StakeConfig, LockConfig, and the Cetus shared
-      // objects: BurnManager / Pools / GlobalConfig, plus metadata_sui).
-      // The current code path works with the deployed (non-DEX-aware) fork.
-      // ================================================================
-      tx2.moveCall({
-        target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
-        typeArguments: [tokenType],
-        arguments: [
-          tx2.object(contract.configuration),                  // configuration
-          tx2.object(contract.stakeConfig),                    // stake_config
-          tx2.object(contract.lockConfig),                      // token_lock_config
-          tx2.object(capObjId),                                // treasury_cap
-          fee,                                                 // pool_creation_fee
-          firstBuy,                                            // coin_sui / coin_aida
-          tx2.pure.u64(minTokensOut),                          // amount_out
-          tx2.pure.u64(targetRaiseMist),                       // threshold
-          tx2.pure.u64(0),                                     // locking_time_ms
-          tx2.object(SUI_CLOCK),                               // clock
-          tx2.pure.string(nameAscii),                          // name
-          tx2.pure.string(symbolAscii),                         // symbol
-          tx2.pure.string(uriAscii),                           // uri
-          tx2.pure.string(descriptionAscii),                    // description
-          tx2.pure.string(twitterAscii),                       // twitter
-          tx2.pure.string(telegramAscii),                      // telegram
-          tx2.pure.string(websiteAscii),                       // website
-          tx2.object(metaObjId),                               // metadata_token
-        ],
-      })
-      /* === DEX-AWARE ARGUMENTS — uncomment after moonbags republish ====
-      tx2.moveCall({
-        target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
-        typeArguments: [tokenType],
-        arguments: [
-          tx2.object(contract.configuration),                  // configuration
-          tx2.object(contract.stakeConfig),                    // stake_config
-          tx2.object(contract.lockConfig),                      // token_lock_config
-          tx2.object(capObjId),                                // treasury_cap
-          fee,                                                 // pool_creation_fee
-          tx2.pure.u8(bondingDex),                             // bonding_dex (0=Cetus, 1=Turbos)
-          firstBuy,                                            // coin_sui / coin_aida
-          tx2.pure.u64(minTokensOut),                          // amount_out
-          tx2.pure.u64(targetRaiseMist),                       // threshold  (wrap with Option<u64> helper if contract expects Option)
-          tx2.pure.u64(0),                                     // locking_time_ms
-          tx2.object(SUI_CLOCK),                               // clock
-          tx2.pure.string(nameAscii),                          // name
-          tx2.pure.string(symbolAscii),                         // symbol
-          tx2.pure.string(uriAscii),                           // uri
-          tx2.pure.string(descriptionAscii),                    // description
-          tx2.pure.string(twitterAscii),                       // twitter
-          tx2.pure.string(telegramAscii),                      // telegram
-          tx2.pure.string(websiteAscii),                       // website
-          tx2.object(contract.cetusBurnManager),               // cetus_burn_manager
-          tx2.object(contract.cetusPools),                     // cetus_pools
-          tx2.object(contract.cetusGlobalConfig),              // cetus_global_config
-          tx2.object(contract.suiMetadata),                    // metadata_sui  (ID: 0x587c29de216efd4219573e08a1f6964d4fa7cb714518c2c8a0f29abfa264327d on mainnet)
-          tx2.object(metaObjId),                               // metadata_token
-        ],
-      })
-      ==============================================================*/
+      // Create pool with metadata. Signatures diverge:
+      //   • SUI pair → v13 moonbags (bonding_dex + auto-Cetus migration,
+      //     threshold: Option<u64>, Cetus shared objects required)
+      //   • AIDA pair → moonbags_aida fork (no DEX selector yet, raw u64
+      //     threshold, no Cetus args — admin-managed graduation)
+      if (isAidaPair) {
+        tx2.moveCall({
+          target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
+          typeArguments: [tokenType],
+          arguments: [
+            tx2.object(contract.configuration),                // configuration
+            tx2.object(contract.stakeConfig),                  // stake_config
+            tx2.object(contract.lockConfig),                   // token_lock_config
+            tx2.object(capObjId),                              // treasury_cap
+            fee,                                               // pool_creation_fee
+            firstBuy,                                          // coin_aida
+            tx2.pure.u64(minTokensOut),                        // amount_out
+            tx2.pure.u64(targetRaiseMist),                     // threshold (u64)
+            tx2.pure.u64(0),                                   // locking_time_ms
+            tx2.object(SUI_CLOCK),                             // clock
+            tx2.pure.string(nameAscii),                        // name
+            tx2.pure.string(symbolAscii),                      // symbol
+            tx2.pure.string(uriAscii),                         // uri
+            tx2.pure.string(descriptionAscii),                 // description
+            tx2.pure.string(twitterAscii),                     // twitter
+            tx2.pure.string(telegramAscii),                    // telegram
+            tx2.pure.string(websiteAscii),                     // website
+            tx2.object(metaObjId),                             // metadata_token
+          ],
+        })
+      } else {
+        // SUI pair on v13 — DEX-aware signature with Option<u64> threshold
+        // and Cetus shared objects. When the bonding curve fills, v13
+        // auto-creates the Cetus pool + burns the LP via lp_burn.
+        tx2.moveCall({
+          target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
+          typeArguments: [tokenType],
+          arguments: [
+            tx2.object(contract.configuration),                // configuration
+            tx2.object(contract.stakeConfig),                  // stake_config
+            tx2.object(contract.lockConfig),                   // token_lock_config
+            tx2.object(capObjId),                              // treasury_cap
+            fee,                                               // pool_creation_fee
+            tx2.pure.u8(bondingDex),                           // bonding_dex (0=Cetus, 1=Turbos)
+            firstBuy,                                          // coin_sui
+            tx2.pure.u64(minTokensOut),                        // amount_out
+            tx2.pure.option('u64', targetRaiseMist),           // threshold: Option<u64>
+            tx2.pure.u64(0),                                   // locking_time_ms
+            tx2.object(SUI_CLOCK),                             // clock
+            tx2.pure.string(nameAscii),                        // name
+            tx2.pure.string(symbolAscii),                      // symbol
+            tx2.pure.string(uriAscii),                         // uri
+            tx2.pure.string(descriptionAscii),                 // description
+            tx2.pure.string(twitterAscii),                     // twitter
+            tx2.pure.string(telegramAscii),                    // telegram
+            tx2.pure.string(websiteAscii),                     // website
+            tx2.object(CETUS_CONTRACT.burnManager),            // cetus_burn_manager
+            tx2.object(CETUS_CONTRACT.pools),                  // cetus_pools
+            tx2.object(CETUS_CONTRACT.globalConfig),           // cetus_global_config
+            tx2.object(SUI_METADATA_ID),                       // metadata_sui
+            tx2.object(metaObjId),                             // metadata_token
+          ],
+        })
+      }
       
       setStatus('Approve in wallet…', 'info')
       const result2 = await signAndExecuteTransaction({
@@ -715,7 +716,22 @@ export default function CreateTokenPage() {
               </div>
             </div>
 
-            {/* Graduation DEX */}
+            {/* Graduation DEX — only shown for SUI pair.
+                AIDA pair (moonbags_aida) has no DEX selector yet; its
+                migration is admin-managed until the AIDA fork republishes
+                with bonding_dex support (phase 2). */}
+            {pairType === 'AIDA' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-3">Graduates To</label>
+                <div className="flex items-start gap-3 p-3 rounded-xl border border-gray-700 bg-white/[0.02]">
+                  <div className="w-5 h-5 rounded-full border-2 border-gray-500 flex items-center justify-center shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="text-white font-medium">Admin-managed</div>
+                    <div className="text-xs text-gray-400">AIDA-pair tokens graduate via the admin wallet. Automated Cetus/Turbos selection will be enabled in the next AIDA fork publish.</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-3">Graduates To</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -767,6 +783,7 @@ export default function CreateTokenPage() {
                   : 'Turbos graduation is admin-assisted while on-chain automation is finalized. Creator-owned LP is still burned before trading begins.'}
               </p>
             </div>
+            )}
 
             {/* Target Raise */}
             <div>

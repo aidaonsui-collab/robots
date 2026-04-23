@@ -86,15 +86,34 @@ export const MOONBAGS_CONTRACT_V12: MoonbagsContract = {
   tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
 }
 
-// Default target for NEW pool creation and new writes. Points at v11.
-// Reads/writes against existing pools should use
-// `getMoonbagsContractForPackage(poolPkgId)` instead of this constant.
-export const MOONBAGS_CONTRACT: MoonbagsContract = MOONBAGS_CONTRACT_V12
+// ── Moonbags Launchpad v13 — 2026-04-23 publish with Cetus/Turbos DEX ──
+// First publish that ships with `bonding_dex: u8` in create_*_with_fee and
+// the full `init_cetus_pool` auto-migration path wired into
+// complete_pool. New pools created under v13 pick their migration DEX
+// at launch; Cetus pools auto-mint + burn LP when the curve fills, and
+// Turbos falls back to admin-dump until init_turbos_pool ships.
+// Publish TX: 4PKjKv1DX9PbhPCMY8uxsBLqNycQJKcLjZZYm64Hs5JN
+export const MOONBAGS_CONTRACT_V13: MoonbagsContract = {
+  packageId:     '0x46c9e43fd8407b7c28dcc4b96e871324cf47404630907d3333303c62497cda85',
+  module:        'moonbags',
+  configuration: '0xba61ba490e4466c27c3886fb2c843663d8f4411e027971381f7eca4e723fb4c9', // moonbags::Configuration
+  stakeConfig:   '0xcc38b3095ce2071a7c83ca582520dd5fd53642f0d05dfd0cf9bb9ceefd9f10fa', // moonbags_stake::Configuration
+  lockConfig:    '0x0f125617a28c46a6ab2a92cdfee5de7cbbd2abc765f80d344173c9668b7305b9', // moonbags_token_lock::Configuration
+  tokenRegistry: '0x0000000000000000000000000000000000000000000000000000000000000000',
+}
+// v13-only objects not present on V12: ThresholdConfig + admin caps.
+export const MOONBAGS_V13_THRESHOLD_CONFIG = '0x5d4f11d9df72753373055f9a2151fa50305efe8405b0025cddd0513fbbadc2be'
+
+// Default target for NEW SUI-pair pool creation. V13 enables the
+// Cetus/Turbos DEX selector; V12_PREV/V12 pools still route via
+// getMoonbagsContractForPackage for reads/writes against existing pools.
+export const MOONBAGS_CONTRACT: MoonbagsContract = MOONBAGS_CONTRACT_V13
 
 // All Moonbags packages we know about (current V12 + previous V12 + V11
 // + legacy chain). Used to fan out event queries across every publish era
 // so tokens from any of them show up in the UI.
 export const MOONBAGS_KNOWN_PACKAGES: readonly string[] = [
+  MOONBAGS_CONTRACT_V13.packageId,
   MOONBAGS_CONTRACT_V12.packageId,
   MOONBAGS_CONTRACT_V12_PREV.packageId,
   ...MOONBAGS_LEGACY_PACKAGE_IDS,
@@ -109,7 +128,7 @@ export const MOONBAGS_KNOWN_PACKAGES: readonly string[] = [
  * the pool's `bonding_curve_config` actually references.
  */
 export function getMoonbagsContractForPackage(packageId?: string | null): MoonbagsContract {
-  if (!packageId) return MOONBAGS_CONTRACT_V12
+  if (!packageId) return MOONBAGS_CONTRACT_V13
   const normalized = packageId.startsWith('0x') ? packageId.toLowerCase() : `0x${packageId.toLowerCase()}`
 
   // AIDA-fork routing — the current publish uses MOONBAGS_AIDA_CONTRACT's
@@ -118,8 +137,10 @@ export function getMoonbagsContractForPackage(packageId?: string | null): Moonba
   if (normalized === MOONBAGS_AIDA_CONTRACT.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT
   if (normalized === MOONBAGS_AIDA_CONTRACT_PREV.packageId.toLowerCase()) return MOONBAGS_AIDA_CONTRACT_PREV
 
-  // Current V12 (v13 republish, 2026-04-21): fresh shared objects, admin-
-  // settable creation fee. New pools go here.
+  // V13 (2026-04-23 republish): first publish with Cetus/Turbos DEX selector.
+  if (normalized === MOONBAGS_CONTRACT_V13.packageId.toLowerCase()) return MOONBAGS_CONTRACT_V13
+
+  // V12 (2026-04-21 republish): admin-settable creation fee, no DEX selector.
   if (normalized === MOONBAGS_CONTRACT_V12.packageId.toLowerCase()) return MOONBAGS_CONTRACT_V12
 
   // Previous V12 publish (2026-04-16) + V11 fresh publish. Both share the
@@ -134,7 +155,7 @@ export function getMoonbagsContractForPackage(packageId?: string | null): Moonba
   if (MOONBAGS_LEGACY_PACKAGE_IDS.some(p => p.toLowerCase() === normalized)) {
     return MOONBAGS_CONTRACT_LEGACY
   }
-  return MOONBAGS_CONTRACT_V12
+  return MOONBAGS_CONTRACT_V13
 }
 
 // ── Cetus DEX objects (verified on mainnet) ─────────────────
