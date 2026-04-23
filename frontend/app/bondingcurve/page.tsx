@@ -143,6 +143,9 @@ export default function BondingCurvePage() {
       }).catch(() => {})
     // Dynamically resolve AIDA StakingPool from v11 stake config (same as staking page)
     const V11_STAKE_CFG = '0x59c35bc4c50631e4d4468d9964ba23c3961e1ff8d7c6df740fcf776c8936e940'
+    // AIDA-pair fork stake config — earns AIDA (not SUI) from AIDA-pair trades.
+    // Match what the staking page uses so the landing-page total reflects both pools.
+    const AIDA_PAIR_STK_CFG = '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09'
     const rpc = (method: string, params: any[]) =>
       fetch(RPC, {
         method: 'POST',
@@ -173,6 +176,16 @@ export default function BondingCurvePage() {
         )
         if (aidaPool?.objectId) {
           totalRaw += await getPoolTotal(aidaPool.objectId)
+        }
+
+        // AIDA-pair fork pool (earns AIDA from AIDA-pair trades). May not exist
+        // yet if no one has initialized it — quiet no-op in that case.
+        const forkFields = await rpc('suix_getDynamicFields', [AIDA_PAIR_STK_CFG, null, 50])
+        const forkAidaPool = (forkFields?.data ?? []).find((p: any) =>
+          p.objectType?.includes('StakingPool') && p.objectType?.includes('aida::AIDA')
+        )
+        if (forkAidaPool?.objectId) {
+          totalRaw += await getPoolTotal(forkAidaPool.objectId)
         }
 
         // Legacy pool (small amount, kept for completeness)
