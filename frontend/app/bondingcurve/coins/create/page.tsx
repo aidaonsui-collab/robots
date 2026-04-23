@@ -708,11 +708,7 @@ export default function CreateTokenPage() {
                     {bondingDex === 0 && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-white font-medium flex items-center gap-2">
-                      Cetus
-                      <span className="text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-full">RECOMMENDED</span>
-                    </div>
-                    <div className="text-xs text-gray-400">Concentrated liquidity, automated pool + LP burn</div>
+                    <div className="text-white font-medium">Cetus</div>
                   </div>
                 </button>
                 <button
@@ -731,15 +727,9 @@ export default function CreateTokenPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-white font-medium">Turbos</div>
-                    <div className="text-xs text-gray-400">Concentrated liquidity, smaller pool but permissionless</div>
                   </div>
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
-                {bondingDex === 0
-                  ? 'When the bonding curve fills, a Cetus CLMM pool is created on-chain automatically and the LP position is burned — liquidity is permanent.'
-                  : 'Turbos graduation is admin-assisted while on-chain automation is finalized. Creator-owned LP is still burned before trading begins.'}
-              </p>
             </div>
 
             {/* Target Raise */}
