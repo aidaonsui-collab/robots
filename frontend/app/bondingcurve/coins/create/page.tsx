@@ -11,7 +11,7 @@ import { bcs } from '@mysten/sui/bcs'
 import { Rocket, Upload, Globe, Twitter, MessageCircle, Video, Loader2, CheckCircle } from 'lucide-react'
 import axios from 'axios'
 import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V14, CETUS_CONTRACT, SUI_METADATA_ID, BACKEND_URL, SUI_CLOCK } from '@/lib/contracts';
-import { MOONBAGS_AIDA_CONTRACT, MOONBAGS_AIDA_CONTRACT_V3, AIDA_COIN_TYPE, AIDA_METADATA_ID } from '@/lib/contracts_aida'
+import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 
 // ── Constants ─────────────────────────────────────────────────
 // Bonding curve matches Moonbags pool depth AND magnitude.
@@ -492,41 +492,69 @@ export default function CreateTokenPage() {
         })
       }
 
-      // Create pool with metadata. Both pair types now use the DEX-aware
-      // v13/v3 signature (bonding_dex + Cetus shared objects,
-      // threshold: Option<u64>). Only difference: AIDA pair uses the
-      // mainnet CoinMetadata<AIDA> object as the quote-coin metadata
-      // argument; SUI pair uses CoinMetadata<SUI>.
-      const quoteMetadataId = isAidaPair ? AIDA_METADATA_ID : SUI_METADATA_ID
-      tx2.moveCall({
-        target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
-        typeArguments: [tokenType],
-        arguments: [
-          tx2.object(contract.configuration),                // configuration
-          tx2.object(contract.stakeConfig),                  // stake_config
-          tx2.object(contract.lockConfig),                   // token_lock_config
-          tx2.object(capObjId),                              // treasury_cap
-          fee,                                               // pool_creation_fee
-          tx2.pure.u8(bondingDex),                           // bonding_dex (0=Cetus, 1=Turbos)
-          firstBuy,                                          // coin_sui / coin_aida
-          tx2.pure.u64(minTokensOut),                        // amount_out
-          tx2.pure.option('u64', targetRaiseMist),           // threshold: Option<u64>
-          tx2.pure.u64(0),                                   // locking_time_ms
-          tx2.object(SUI_CLOCK),                             // clock
-          tx2.pure.string(nameAscii),                        // name
-          tx2.pure.string(symbolAscii),                      // symbol
-          tx2.pure.string(uriAscii),                         // uri
-          tx2.pure.string(descriptionAscii),                 // description
-          tx2.pure.string(twitterAscii),                     // twitter
-          tx2.pure.string(telegramAscii),                    // telegram
-          tx2.pure.string(websiteAscii),                     // website
-          tx2.object(CETUS_CONTRACT.burnManager),            // cetus_burn_manager
-          tx2.object(CETUS_CONTRACT.pools),                  // cetus_pools
-          tx2.object(CETUS_CONTRACT.globalConfig),           // cetus_global_config
-          tx2.object(quoteMetadataId),                       // metadata_sui / metadata_aida
-          tx2.object(metaObjId),                             // metadata_token
-        ],
-      })
+      // Create pool with metadata. AIDA and SUI pairs have DIFFERENT
+      // on-chain signatures — even though the v3 publish runbook planned
+      // a `bonding_dex` + Cetus layout for both, the live V3 AIDA
+      // package (0x69079609…) was published without those edits and
+      // still matches the v2 signature (no bonding_dex, no Cetus shared
+      // objects, `threshold: u64` not `Option<u64>`). SUI V14 ships with
+      // the full DEX-aware layout.
+      if (isAidaPair) {
+        tx2.moveCall({
+          target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
+          typeArguments: [tokenType],
+          arguments: [
+            tx2.object(contract.configuration),              // 0  configuration
+            tx2.object(contract.stakeConfig),                // 1  stake_config
+            tx2.object(contract.lockConfig),                 // 2  token_lock_config
+            tx2.object(capObjId),                            // 3  treasury_cap
+            fee,                                             // 4  pool_creation_fee (Coin<AIDA>)
+            firstBuy,                                        // 5  coin_sui (actually Coin<AIDA>)
+            tx2.pure.u64(minTokensOut),                      // 6  amount_out
+            tx2.pure.u64(targetRaiseMist),                   // 7  threshold (plain u64)
+            tx2.pure.u64(0),                                 // 8  locking_time_ms
+            tx2.object(SUI_CLOCK),                           // 9  clock
+            tx2.pure.string(nameAscii),                      // 10 name
+            tx2.pure.string(symbolAscii),                    // 11 symbol
+            tx2.pure.string(uriAscii),                       // 12 uri
+            tx2.pure.string(descriptionAscii),               // 13 description
+            tx2.pure.string(twitterAscii),                   // 14 twitter
+            tx2.pure.string(telegramAscii),                  // 15 telegram
+            tx2.pure.string(websiteAscii),                   // 16 website
+            tx2.object(metaObjId),                           // 17 metadata_token
+          ],
+        })
+      } else {
+        tx2.moveCall({
+          target: `${contract.packageId}::${contract.module}::create_and_lock_first_buy_with_fee`,
+          typeArguments: [tokenType],
+          arguments: [
+            tx2.object(contract.configuration),              // configuration
+            tx2.object(contract.stakeConfig),                // stake_config
+            tx2.object(contract.lockConfig),                 // token_lock_config
+            tx2.object(capObjId),                            // treasury_cap
+            fee,                                             // pool_creation_fee
+            tx2.pure.u8(bondingDex),                         // bonding_dex (0=Cetus, 1=Turbos)
+            firstBuy,                                        // coin_sui
+            tx2.pure.u64(minTokensOut),                      // amount_out
+            tx2.pure.option('u64', targetRaiseMist),         // threshold: Option<u64>
+            tx2.pure.u64(0),                                 // locking_time_ms
+            tx2.object(SUI_CLOCK),                           // clock
+            tx2.pure.string(nameAscii),                      // name
+            tx2.pure.string(symbolAscii),                    // symbol
+            tx2.pure.string(uriAscii),                       // uri
+            tx2.pure.string(descriptionAscii),               // description
+            tx2.pure.string(twitterAscii),                   // twitter
+            tx2.pure.string(telegramAscii),                  // telegram
+            tx2.pure.string(websiteAscii),                   // website
+            tx2.object(CETUS_CONTRACT.burnManager),          // cetus_burn_manager
+            tx2.object(CETUS_CONTRACT.pools),                // cetus_pools
+            tx2.object(CETUS_CONTRACT.globalConfig),         // cetus_global_config
+            tx2.object(SUI_METADATA_ID),                     // metadata_sui
+            tx2.object(metaObjId),                           // metadata_token
+          ],
+        })
+      }
       
       setStatus('Approve in wallet…', 'info')
       const result2 = await signAndExecuteTransaction({
