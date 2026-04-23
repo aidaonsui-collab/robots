@@ -30,7 +30,7 @@ module moonbags_aida::moonbags {
     // === Constants Config ===
     const DEFAULT_THRESHOLD: u64 = 2000000000000; // 2000 SUI
     const MINIMUM_THRESHOLD: u64 = 1000000000000; // 1000 SUI minimum
-    const VERSION: u64 = 4;
+    const VERSION: u64 = 5;
     const FEE_DENOMINATOR: u64 = 10000;
     const DISTRIBUTE_FEE_LOCK_DURATION_MS: u64 = 300_000; // 5 minutes
     // Deprecated — fee now lives on `Configuration.pool_creation_fee`,
@@ -1216,13 +1216,19 @@ module moonbags_aida::moonbags {
     // liquidity is locked. Any residual coins that don't fit the range
     // return to the admin in the same tx.
     //
+    // This takes `&mut Configuration` (not `&mut Pool<Token>`) because the
+    // AIDA fork stores per-token pools as dynamic object fields hanging
+    // off Configuration — those can't be passed as root PTB arguments.
+    // The function borrows the Pool<Token> by type-name address, same key
+    // pattern the buy/sell entries use.
+    //
     // Mirror of `moonbags::init_cetus_pool` in the SUI fork — tick math
     // (spacing 200, -443600..443600, Q64 sqrt price) is pool-agnostic.
     public entry fun init_cetus_aida_pool<Token>(
         admin: address,
+        configuration: &mut Configuration,
         coin_aida: Coin<AIDA>,
         coin_token: Coin<Token>,
-        pool: &mut Pool<Token>,
         cetus_burn_manager: &mut BurnManager,
         cetus_pools: &mut Pools,
         cetus_config: &mut GlobalConfig,
@@ -1231,6 +1237,12 @@ module moonbags_aida::moonbags {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
+        let token_address = type_name::get<Token>();
+        let pool = dynamic_object_field::borrow_mut<String, Pool<Token>>(
+            &mut configuration.id,
+            type_name::get_address(&token_address)
+        );
+
         assert!(pool.is_completed, EPoolNotComplete);
 
         let token_amount = coin::value<Token>(&coin_token) as u256;
