@@ -1207,24 +1207,54 @@ module moonbags_aida::moonbags {
     }
 
     // === V4 Cetus auto-migration ===========================================
-    // Called after a bonding pool has filled and `transfer_pool` dumped its
-    // `real_token_reserves` + `real_sui_reserves` (as Coin<AIDA>) to the
-    // admin wallet. The admin (or a cron watching `PoolMigratingEvent`)
-    // feeds those coins back in here to atomically spin up a Cetus
-    // Coin<Token, AIDA> pool, burn the returned LP position with lp_burn,
-    // and record the burn proof on the bonding pool so anyone can verify
-    // liquidity is locked. Any residual coins that don't fit the range
-    // return to the admin in the same tx.
+    // Original V4 entry — DO NOT change this signature. Sui's "compatible"
+    // upgrade policy rejects any signature change on a previously published
+    // public function, so once V4 shipped with `pool: &mut Pool<Token>`
+    // we're stuck with this shape forever.
     //
-    // This takes `&mut Configuration` (not `&mut Pool<Token>`) because the
-    // AIDA fork stores per-token pools as dynamic object fields hanging
-    // off Configuration — those can't be passed as root PTB arguments.
-    // The function borrows the Pool<Token> by type-name address, same key
-    // pattern the buy/sell entries use.
+    // The argument design turned out to be unusable from a PTB: the AIDA
+    // fork stores per-token pools as dynamic object fields hanging off
+    // Configuration, so external callers can't obtain the `&mut Pool<T>`
+    // needed for arg 4. The replacement that actually works is
+    // `init_cetus_aida_pool_v2` below, which takes Configuration and
+    // borrows the Pool internally. Existing callers should switch to v2;
+    // this entry is left in place purely to keep the upgrade compatible.
     //
     // Mirror of `moonbags::init_cetus_pool` in the SUI fork — tick math
     // (spacing 200, -443600..443600, Q64 sqrt price) is pool-agnostic.
     public entry fun init_cetus_aida_pool<Token>(
+        admin: address,
+        coin_aida: Coin<AIDA>,
+        coin_token: Coin<Token>,
+        pool: &mut Pool<Token>,
+        cetus_burn_manager: &mut BurnManager,
+        cetus_pools: &mut Pools,
+        cetus_config: &mut GlobalConfig,
+        metadata_aida: &CoinMetadata<AIDA>,
+        metadata_token: &CoinMetadata<Token>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        init_cetus_aida_pool_inner<Token>(
+            admin,
+            pool,
+            coin_aida,
+            coin_token,
+            cetus_burn_manager,
+            cetus_pools,
+            cetus_config,
+            metadata_aida,
+            metadata_token,
+            clock,
+            ctx,
+        );
+    }
+
+    // === V5 Cetus auto-migration (callable from PTB) =======================
+    // Replacement for init_cetus_aida_pool. Takes &mut Configuration and
+    // borrows the Pool<Token> internally via dynamic_object_field, so this
+    // is the variant Jack's cron and ad-hoc admin tx actually call.
+    public entry fun init_cetus_aida_pool_v2<Token>(
         admin: address,
         configuration: &mut Configuration,
         coin_aida: Coin<AIDA>,
@@ -1242,7 +1272,37 @@ module moonbags_aida::moonbags {
             &mut configuration.id,
             type_name::get_address(&token_address)
         );
+        init_cetus_aida_pool_inner<Token>(
+            admin,
+            pool,
+            coin_aida,
+            coin_token,
+            cetus_burn_manager,
+            cetus_pools,
+            cetus_config,
+            metadata_aida,
+            metadata_token,
+            clock,
+            ctx,
+        );
+    }
 
+    // Shared body — both entries above flow through here. Splitting the
+    // logic out keeps the v1/v2 entries identical apart from how they
+    // obtain the &mut Pool reference.
+    fun init_cetus_aida_pool_inner<Token>(
+        admin: address,
+        pool: &mut Pool<Token>,
+        coin_aida: Coin<AIDA>,
+        coin_token: Coin<Token>,
+        cetus_burn_manager: &mut BurnManager,
+        cetus_pools: &mut Pools,
+        cetus_config: &mut GlobalConfig,
+        metadata_aida: &CoinMetadata<AIDA>,
+        metadata_token: &CoinMetadata<Token>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
         assert!(pool.is_completed, EPoolNotComplete);
 
         let token_amount = coin::value<Token>(&coin_token) as u256;
