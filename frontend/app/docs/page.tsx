@@ -254,8 +254,8 @@ export default function DocsPage() {
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">
             <h3 className="text-white font-semibold text-sm mb-3">Agent Creation — Pricing</h3>
             <InfoRow label="Base pool creation fee" value="100,000 AIDA (on-chain, shared with regular AIDA-pair launches)" />
-            <InfoRow label="Agent premium" value="150,000 AIDA (agent launches only)" />
-            <InfoRow label="Total" value="250,000 AIDA" />
+            <InfoRow label="Agent premium" value="1,000,000 AIDA (agent launches only)" />
+            <InfoRow label="Total" value="1,100,000 AIDA" />
             <p className="text-gray-500 text-xs mt-3 leading-relaxed">
               The premium is paid to the Odyssey treasury in the same transaction as coin publish + pool creation — one Slush signature for everything. Regular bonding-curve launches via Projects → Create Token don't pay the premium and don't get the agent bundle (Founder NFT, A2A card, premium tools, dashboard, chat).
             </p>
