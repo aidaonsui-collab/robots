@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useCurrentWallet, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { useCurrentWallet, useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import { Loader2, Gift, TrendingUp, TrendingDown } from 'lucide-react'
 import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
@@ -49,8 +49,14 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   // math below is the same.
   const rewardSymbol = isAidaPair ? 'AIDA' : 'SUI'
 
-  const { isConnected, currentWallet } = useCurrentWallet()
-  const address = currentWallet?.accounts?.[0]?.address
+  // Match the parent page: read the SELECTED account (useCurrentAccount),
+  // not accounts[0] on the wallet. Users with multiple accounts in their
+  // wallet would otherwise see a zero balance here even when Trade shows
+  // the correct amount, because the selected account differs from the
+  // first one the wallet exposes.
+  const { isConnected } = useCurrentWallet()
+  const currentAccount = useCurrentAccount()
+  const address = currentAccount?.address
   const suiClient = useSuiClient()
   const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction()
 
@@ -292,6 +298,21 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
             className="flex-1 bg-white/5 border border-gray-700 rounded-xl py-2.5 px-3 text-white placeholder:text-gray-600 focus:outline-none focus:border-emerald-500/50 text-sm"
           />
           <button
+            type="button"
+            onClick={() => {
+              if (walletBalance > 0n) {
+                // Strip commas from locale-formatted display so the input's
+                // type="number" accepts it. Uses the same decimals the
+                // stake/unstake calls use, so round-tripping to mist is exact.
+                setStakeInput(fromMist(walletBalance).replace(/,/g, ''))
+              }
+            }}
+            disabled={walletBalance === 0n || loading || !isConnected}
+            className="px-3 py-2.5 rounded-xl bg-white/5 border border-gray-700 text-gray-300 text-xs font-bold hover:bg-white/10 transition-colors disabled:opacity-50"
+          >
+            MAX
+          </button>
+          <button
             onClick={handleStake}
             disabled={loading || !isConnected}
             className="px-4 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-sm font-bold hover:bg-emerald-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5"
@@ -348,7 +369,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
 
       <p className="text-[10px] text-gray-600 text-center leading-relaxed">
         Fees are distributed once per day by the platform cron.
-        Meme-token stakers share ~0.01% of trade fees — the bulk (~30%) goes to AIDA stakers globally
+        Meme-token stakers share ~10% of trade fees; AIDA stakers globally share ~25%
         (paid in {rewardSymbol} for this pool).
       </p>
     </div>
