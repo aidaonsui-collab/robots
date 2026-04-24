@@ -4,17 +4,59 @@
 [move]
 version = 4
 
+[pinned.mainnet.Cetus]
+source = { local = "externals/token/cetus" }
+use_environment = "mainnet"
+manifest_digest = "3876920E3F5449B657525E749B996C31141507452514AF2E259F5441554DCDDF"
+deps = { Sui = "Sui" }
+
+[pinned.mainnet.CetusClmm]
+source = { local = "externals/cetus_clmm" }
+use_environment = "mainnet"
+manifest_digest = "19D4BE65EEE0464436EDB65983FE30BD956329C5D1EFB82963840522C9C81278"
+deps = { IntegerMate = "IntegerMate", MoveSTL = "MoveSTL", Sui = "Sui" }
+
+[pinned.mainnet.CetusRedeem]
+source = { local = "externals/cetus_redeem" }
+use_environment = "mainnet"
+manifest_digest = "F0CB47900C87389027CDC06102A50D51D6E6524FFF0F9F5E6061DCF89CADB8D3"
+deps = { Cetus = "Cetus", CetusClmm = "CetusClmm", IntegerMate = "IntegerMate", MoveSTL = "MoveSTL", Sui = "Sui" }
+
+[pinned.mainnet.IntegerMate]
+source = { local = "externals/integer-mate" }
+use_environment = "mainnet"
+manifest_digest = "3876920E3F5449B657525E749B996C31141507452514AF2E259F5441554DCDDF"
+deps = { Sui = "Sui" }
+
+[pinned.mainnet.LpBurn]
+source = { local = "externals/lp_burn" }
+use_environment = "mainnet"
+manifest_digest = "A26170DC3EA02244F222BC02C59F1F9F10226C64CF4ED66BE721FC8AEAC5AC27"
+deps = { Cetus = "Cetus", CetusClmm = "CetusClmm", CetusRedeem = "CetusRedeem", Sui = "Sui" }
+
+[pinned.mainnet.MoveSTL]
+source = { local = "externals/move-stl" }
+use_environment = "mainnet"
+manifest_digest = "3876920E3F5449B657525E749B996C31141507452514AF2E259F5441554DCDDF"
+deps = { Sui = "Sui" }
+
 [pinned.mainnet.MoveStdlib]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "a7e7b45a4ceeee819b07820e31ce6094cd0757d1" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "6d4ec0b0621dd9555753c9ecd5be021b25a0d267" }
 use_environment = "mainnet"
 manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
 deps = {}
 
 [pinned.mainnet.Sui]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "a7e7b45a4ceeee819b07820e31ce6094cd0757d1" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "6d4ec0b0621dd9555753c9ecd5be021b25a0d267" }
 use_environment = "mainnet"
 manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263195"
 deps = { MoveStdlib = "MoveStdlib" }
+
+[pinned.mainnet.TurbosCLMM]
+source = { local = "externals/turbos_clmm" }
+use_environment = "mainnet"
+manifest_digest = "3876920E3F5449B657525E749B996C31141507452514AF2E259F5441554DCDDF"
+deps = { Sui = "Sui" }
 
 [pinned.mainnet.aida]
 source = { local = "sources_deps/aida" }
@@ -25,5 +67,5 @@ deps = { Sui = "Sui" }
 [pinned.mainnet.moonbags_aida]
 source = { root = true }
 use_environment = "mainnet"
-manifest_digest = "9BC33404708973F3265F0AD2B9ADC38E6762DEAFF9B092FF409B8F66663C926C"
-deps = { Sui = "Sui", aida = "aida" }
+manifest_digest = "E3B9CAFA9F8166CC749F0085C6EA65584011CA4FF8E26AA4A7B5A74889D31CE6"
+deps = { CetusClmm = "CetusClmm", LpBurn = "LpBurn", Sui = "Sui", TurbosCLMM = "TurbosCLMM", aida = "aida" }
