@@ -1345,7 +1345,57 @@ export default function AgentDashboardPage() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            
+
+            {/* Founder NFT — only rendered when the agent has one minted */}
+            {agent.founderNftId && (
+              <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-white/10 p-6">
+                <h3 className="font-bold text-white mb-4 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#D4AF37]" />
+                  Founder NFT
+                </h3>
+                <div className="flex items-start gap-4">
+                  <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-[#D4AF37]/30 to-[#FFD700]/10 border border-[#D4AF37]/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {hasValidAvatar(agent.avatarUrl) ? (
+                      <img src={agent.avatarUrl} alt={agent.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-lg font-bold text-[#D4AF37]">
+                        {agent.symbol?.slice(0, 2)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">
+                      Odyssey Founder — {agent.name}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Owns the creator fee stream for ${agent.symbol}
+                    </p>
+                    <a
+                      href={`https://suiscan.xyz/mainnet/object/${agent.founderNftId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block mt-2 text-[10px] font-mono text-gray-500 hover:text-[#D4AF37] truncate max-w-full"
+                      title={agent.founderNftId}
+                    >
+                      {agent.founderNftId.slice(0, 10)}…{agent.founderNftId.slice(-6)}
+                    </a>
+                  </div>
+                </div>
+                <a
+                  href={`https://www.tradeport.xyz/sui/nft/${agent.founderNftId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] text-sm font-semibold hover:bg-[#D4AF37]/25 transition-all"
+                >
+                  View on TradePort
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+                <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">
+                  Transferable. Whoever holds this NFT receives the creator fee share on every trade of ${agent.symbol}. 2.5% royalty on secondary sales routes to Odyssey treasury.
+                </p>
+              </div>
+            )}
+
             {/* Stats */}
             <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-white/10 p-6">
               <h3 className="font-bold text-white mb-4 flex items-center gap-2">
