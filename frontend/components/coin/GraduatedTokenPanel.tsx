@@ -12,7 +12,7 @@ interface Props {
 }
 
 // Shown on the coin detail page in place of the Trade tab once a token has
-// graduated off the bonding curve onto Momentum CLMM. The bonding pool is
+// graduated off the bonding curve onto Cetus CLMM. The bonding pool is
 // drained at graduation, so on-curve swaps are no longer possible — users
 // route through external DEXs or aggregators to trade.
 export default function GraduatedTokenPanel({ coinType, symbol, moonbagsPackageId, poolId }: Props) {
@@ -32,9 +32,8 @@ export default function GraduatedTokenPanel({ coinType, symbol, moonbagsPackageI
     }
   }
 
-  const deeptradeUrl = `https://deeptrade.io/swap?from=${encodeURIComponent(pairCoinType)}&to=${encodeURIComponent(coinType)}`
   const cetusUrl = `https://app.cetus.zone/swap?from=${encodeURIComponent(pairCoinType)}&to=${encodeURIComponent(coinType)}`
-  const momentumUrl = 'https://app.mmt.finance/'
+  const deeptradeUrl = `https://deeptrade.io/swap?from=${encodeURIComponent(pairCoinType)}&to=${encodeURIComponent(coinType)}`
   const suivisionUrl = poolId
     ? `https://suivision.xyz/object/${poolId}`
     : `https://suivision.xyz/coin/${encodeURIComponent(coinType)}`
@@ -46,48 +45,37 @@ export default function GraduatedTokenPanel({ coinType, symbol, moonbagsPackageI
           <Rocket className="w-5 h-5 text-black" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-white">Graduated to Momentum</h2>
+          <h2 className="text-xl font-bold text-white">Graduated to Cetus</h2>
           <p className="text-xs text-gray-500">${symbol} bonding curve completed — trade on a DEX below.</p>
         </div>
       </div>
 
-      {/* External trade CTAs */}
+      {/* External trade CTAs — Cetus is where the liquidity actually lives
+          post-graduation (LP burned on Cetus CLMM). DeepTrade is kept as
+          an aggregator fallback. */}
       <div className="space-y-2">
         <a
-          href={deeptradeUrl}
+          href={cetusUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-between w-full p-4 rounded-xl bg-gradient-to-r from-[#D4AF37]/20 to-[#FFD700]/20 border border-[#D4AF37]/40 hover:from-[#D4AF37]/30 hover:to-[#FFD700]/30 transition-colors"
         >
           <div>
-            <p className="text-sm font-bold text-[#D4AF37]">Trade on DeepTrade</p>
-            <p className="text-[10px] text-gray-400">Aggregated swap · routes through Momentum pool</p>
+            <p className="text-sm font-bold text-[#D4AF37]">Trade on Cetus</p>
+            <p className="text-[10px] text-gray-400">CLMM pool with burned LP · the canonical DEX for ${symbol}</p>
           </div>
           <ExternalLink className="w-4 h-4 text-[#D4AF37]" />
         </a>
 
         <a
-          href={cetusUrl}
+          href={deeptradeUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-between w-full p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
         >
           <div>
-            <p className="text-sm font-semibold text-white">Trade on Cetus Aggregator</p>
-            <p className="text-[10px] text-gray-500">Fallback — shows price-impact warning until HERO is listed</p>
-          </div>
-          <ExternalLink className="w-4 h-4 text-gray-400" />
-        </a>
-
-        <a
-          href={momentumUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-between w-full p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
-        >
-          <div>
-            <p className="text-sm font-semibold text-white">Open Momentum DEX</p>
-            <p className="text-[10px] text-gray-500">Paste CA below into token picker if not listed yet</p>
+            <p className="text-sm font-semibold text-white">Trade on DeepTrade</p>
+            <p className="text-[10px] text-gray-500">Aggregator fallback · auto-routes through the Cetus pool</p>
           </div>
           <ExternalLink className="w-4 h-4 text-gray-400" />
         </a>
@@ -139,7 +127,7 @@ export default function GraduatedTokenPanel({ coinType, symbol, moonbagsPackageI
 
       <p className="text-[10px] text-gray-600 text-center leading-relaxed">
         Paired against <span className="font-semibold text-white">{pairType}</span>.
-        Liquidity lives on Momentum CLMM — the bonding curve pool is closed.
+        Liquidity lives on Cetus CLMM with LP burned — the bonding curve pool is closed.
       </p>
     </div>
   )
