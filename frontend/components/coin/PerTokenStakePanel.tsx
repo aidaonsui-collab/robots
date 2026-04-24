@@ -10,47 +10,28 @@ import { getMoonbagsContractForPackage } from '@/lib/contracts'
 const SUI_CLOCK = '0x0000000000000000000000000000000000000000000000000000000000000006'
 
 interface Props {
-  // Full coin type of the meme token, e.g. "0x9b23...::hero::HERO"
   coinType: string
   symbol: string
-  // Package ID of the pool (used to route SUI vs AIDA contracts)
   moonbagsPackageId?: string
 }
 
-// Per-token staking widget. Stakers of the meme token (e.g. HERO) share the
-// small portion of trading fees that the contract routes to meme stakers
-// (currently ~10% of fees per the init_stake_fee_withdraw config), so
-// rewards are meaningful — see the /staking page for the ~25% that goes
-// to AIDA stakers globally instead.
-//
-// Works for both AIDA-paired and SUI-paired pools. The SUI fork's
-// moonbags_stake module is structurally identical to the AIDA fork's —
-// same entry names, same signatures — just different reward coin (SUI
-// vs AIDA). At pool creation both forks call initialize_staking_pool<Token>
-// and initialize_creator_pool<Token>, so every pool launched under v11+
-// (SUI) or v8 (AIDA) has the per-token pool ready to accept stake().
-// Legacy v7 pools predate this and may abort on stake() — that's an
-// edge case we don't handle here; the user just sees the move-call error.
+// Per-token staking widget. Works for both AIDA-paired and SUI-paired pools.
+// Reads wallet balance + staked balance + pending rewards, lets the user
+// stake / unstake / claim. Routes to the moonbags_stake module on the
+// package matching the pool's pair type.
 export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId }: Props) {
   const pairType = getPairType(moonbagsPackageId)
   const isAidaPair = pairType === 'AIDA'
 
-  // Resolve the right moonbags bundle for the move-call target + stakeConfig.
-  // For AIDA, we always hit the current v8 package. For SUI, we route to the
-  // exact publish the pool was created under — the stakeConfig that owns its
-  // per-token staking pool lives on that publish, not on "latest SUI".
   const pkgBundle = isAidaPair
     ? MOONBAGS_AIDA_CONTRACT
     : getMoonbagsContractForPackage(moonbagsPackageId)
   const pkgId     = pkgBundle.packageId
   const configId  = pkgBundle.stakeConfig
-  // Reward coin flows through on-chain from distribute_fees — AIDA on the
-  // AIDA fork, SUI on the SUI fork. Both are 9-decimal, so the conversion
-  // math below is the same.
   const rewardSymbol = isAidaPair ? 'AIDA' : 'SUI'
 
-  // Match the parent page: read the SELECTED account (useCurrentAccount),
-  // not accounts[0] on the wallet.
+  // Use the SELECTED account (useCurrentAccount), not accounts[0] — matches
+  // what the parent page uses so balances don't drift.
   const { isConnected } = useCurrentWallet()
   const currentAccount = useCurrentAccount()
   const address = currentAccount?.address
@@ -60,11 +41,6 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   const [walletBalance, setWalletBalance] = useState<bigint>(0n)
   const [stakedBalance, setStakedBalance] = useState<bigint | null>(null)
   const [pendingReward, setPendingReward] = useState<bigint | null>(null)
-  // Token decimals come from on-chain CoinMetadata<Token>.decimals, NOT from
-  // the Configuration's stored `token_decimals` field (that's a display
-  // preference, not authoritative). AIDA-fork bonding-curve tokens are
-  // typically 6-decimal; SUI-fork tokens typically 9-decimal. We default
-  // to 6 for the first render and overwrite once the metadata fetch lands.
   const [tokenDecimals, setTokenDecimals] = useState<number>(6)
   const [stakeInput, setStakeInput] = useState('')
   const [unstakeInput, setUnstakeInput] = useState('')
@@ -72,12 +48,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error'>('info')
 
-  // ── Query wallet balance of this token ───────────────────────────────────
-  // Direct suiClient.getCoins in useEffect — not useSuiClientQuery. The
-  // react-query wrapper was returning empty even when Trade's equivalent
-  // query worked, which suggests some cache/key collision. Direct call
-  // is simpler, we control exactly when it fires, and console logs let
-  // us diagnose stuck balances from browser devtools.
+  // ── Wallet balance of this token ─────────────────────────────────────────
   const [balanceTick, setBalanceTick] = useState(0)
   const refetchTokenCoins = useCallback(() => setBalanceTick(t => t + 1), [])
   useEffect(() => {
@@ -93,22 +64,14 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         const coins = res?.data ?? []
         const total = coins.reduce((s: bigint, c: any) => s + BigInt(c.balance), 0n)
         setWalletBalance(total)
-        // eslint-disable-next-line no-console
-        console.log('[stake-panel] getCoins', { address, coinType, count: coins.length, total: total.toString() })
-      } catch (e: any) {
-        if (!cancelled) {
-          setWalletBalance(0n)
-          // eslint-disable-next-line no-console
-          console.error('[stake-panel] getCoins failed', { address, coinType, error: e?.message })
-        }
+      } catch {
+        if (!cancelled) setWalletBalance(0n)
       }
     })()
     return () => { cancelled = true }
   }, [address, coinType, suiClient, balanceTick])
 
-  // Pending-rewards read — stays on the direct devInspect path because
-  // calculate_rewards_earned isn't a simple RPC; it's a move-call that
-  // returns a u64 we decode from BCS.
+  // ── Pending rewards (devInspect into calculate_rewards_earned) ───────────
   const refreshRewards = useCallback(async () => {
     if (!address) {
       setPendingReward(null)
@@ -128,30 +91,68 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       const returnVals = (result?.results?.[0]?.returnValues ?? []) as Array<[number[], string]>
       if (returnVals.length > 0) {
         const bytes = Uint8Array.from(returnVals[0][0])
-        // BCS u64: little-endian 8 bytes
         let v = 0n
         for (let i = 0; i < bytes.length && i < 8; i++) v |= BigInt(bytes[i]) << BigInt(i * 8)
         setPendingReward(v)
       }
     } catch {
-      // devInspect can fail if the stake pool doesn't exist or user hasn't staked
       setPendingReward(null)
     }
   }, [address, coinType, suiClient, configId, pkgId])
 
   useEffect(() => { refreshRewards() }, [refreshRewards])
 
-  // Convenience combined refresher — stake/unstake/claim handlers call
-  // this after a successful tx lands.
+  // ── Staked balance ───────────────────────────────────────────────────────
+  // Two-hop dynamic-field lookup: first find the per-token staking pool on
+  // the stakeConfig (keyed by coinType string), then find the user's
+  // StakingAccount on that pool (keyed by address), then read the account's
+  // `balance` field. Null = pool not initialized / read failed. 0n = no stake.
+  const [stakedTick, setStakedTick] = useState(0)
+  const refetchStaked = useCallback(() => setStakedTick(t => t + 1), [])
+  useEffect(() => {
+    if (!address || !coinType || !configId) {
+      setStakedBalance(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const poolFields = await suiClient.getDynamicFields({ parentId: configId, limit: 50 })
+        if (cancelled) return
+        const poolField = poolFields.data.find((f: any) => f?.name?.value === coinType)
+        if (!poolField?.objectId) {
+          setStakedBalance(null)
+          return
+        }
+        const accountFields = await suiClient.getDynamicFields({ parentId: poolField.objectId, limit: 50 })
+        if (cancelled) return
+        const accountField = accountFields.data.find((f: any) => f?.name?.value === address)
+        if (!accountField?.objectId) {
+          setStakedBalance(0n)
+          return
+        }
+        const accountObj = await suiClient.getObject({ id: accountField.objectId, options: { showContent: true } })
+        if (cancelled) return
+        const fields = (accountObj.data?.content as any)?.fields
+        if (fields?.balance !== undefined && fields?.balance !== null) {
+          setStakedBalance(BigInt(fields.balance))
+        } else {
+          setStakedBalance(0n)
+        }
+      } catch {
+        if (!cancelled) setStakedBalance(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [address, coinType, suiClient, configId, stakedTick])
+
   const refreshBalances = useCallback(async () => {
     refetchTokenCoins()
+    refetchStaked()
     await refreshRewards()
-  }, [refreshRewards, refetchTokenCoins])
+  }, [refreshRewards, refetchTokenCoins, refetchStaked])
 
-  // Fetch the token's real on-chain decimals once per coinType. Frozen
-  // at token publish, so no need to re-fetch. Default stays at 6 if the
-  // fetch fails — worst case the display reads off by 10^3 until the
-  // user refreshes, no fund-at-risk.
+  // ── Token decimals from CoinMetadata ─────────────────────────────────────
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -167,14 +168,10 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     return () => { cancelled = true }
   }, [coinType, suiClient])
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
   function setStatus(msg: string, type: 'info' | 'success' | 'error' = 'info') {
     setStatusMsg(msg); setStatusType(type)
   }
-
-  // Convert user-entered amounts and on-chain mist using the token's
-  // actual decimals (set in CoinMetadata at the token's publish). See
-  // useEffect below for the fetch.
   function toMist(amount: string): bigint {
     const v = parseFloat(amount)
     if (!isFinite(v) || v <= 0) return 0n
@@ -183,12 +180,11 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   function fromMist(m: bigint): string {
     return (Number(m) / 10 ** tokenDecimals).toLocaleString(undefined, { maximumFractionDigits: 4 })
   }
-  // Both AIDA and SUI are 9-decimal, so the same conversion works for either.
   function fromRewardMist(m: bigint): string {
     return (Number(m) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 6 })
   }
 
-  // ── Stake ─────────────────────────────────────────────────────────────────
+  // ── Stake ────────────────────────────────────────────────────────────────
   async function handleStake() {
     if (!isConnected || !address) { setStatus('Connect your wallet first', 'error'); return }
     const mist = toMist(stakeInput)
@@ -198,7 +194,6 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     setLoading(true)
     setStatus('Preparing stake transaction…', 'info')
     try {
-      // Collect + merge user's coins, then split the exact stake amount.
       const { data: coins } = await suiClient.getCoins({ owner: address, coinType })
       if (!coins.length) { setStatus(`No ${symbol} coins in wallet`, 'error'); setLoading(false); return }
 
@@ -216,11 +211,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       tx.moveCall({
         target: `${pkgId}::moonbags_stake::stake`,
         typeArguments: [coinType],
-        arguments: [
-          tx.object(configId),
-          stakeCoin,
-          tx.object(SUI_CLOCK),
-        ],
+        arguments: [tx.object(configId), stakeCoin, tx.object(SUI_CLOCK)],
       })
 
       setStatus('Approve in wallet…', 'info')
@@ -235,7 +226,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     setLoading(false)
   }
 
-  // ── Unstake ───────────────────────────────────────────────────────────────
+  // ── Unstake ──────────────────────────────────────────────────────────────
   async function handleUnstake() {
     if (!isConnected || !address) { setStatus('Connect your wallet first', 'error'); return }
     const mist = toMist(unstakeInput)
@@ -248,11 +239,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       tx.moveCall({
         target: `${pkgId}::moonbags_stake::unstake`,
         typeArguments: [coinType],
-        arguments: [
-          tx.object(configId),
-          tx.pure.u64(mist),
-          tx.object(SUI_CLOCK),
-        ],
+        arguments: [tx.object(configId), tx.pure.u64(mist), tx.object(SUI_CLOCK)],
       })
       setStatus('Approve in wallet…', 'info')
       const result = await signAndExecuteTransaction({ transaction: tx, chain: 'sui:mainnet' })
@@ -261,12 +248,28 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       setUnstakeInput('')
       await refreshBalances()
     } catch (e: any) {
-      setStatus(e?.message || 'Unstake failed', 'error')
+      // Map known contract abort codes to friendlier messages.
+      const msg = e?.message || ''
+      const abortMatch = msg.match(/abort code[': ]+(\d+)/i)
+      const abortCode = abortMatch ? parseInt(abortMatch[1], 10) : null
+      if (msg.includes('EStakingPoolNotExist') || abortCode === 1) {
+        setStatus('Staking pool not initialized for this token', 'error')
+      } else if (msg.includes('EStakingAccountNotExist') || abortCode === 3) {
+        setStatus('No staking position found for this token', 'error')
+      } else if (msg.includes('EAccountBalanceNotEnough') || abortCode === 4) {
+        setStatus('Insufficient staked balance', 'error')
+      } else if (msg.includes('EInvalidAmount') || abortCode === 6) {
+        setStatus('Invalid unstake amount', 'error')
+      } else if (msg.includes('EUnstakeDeadlineNotAllow') || abortCode === 8) {
+        setStatus('Unstake is in cooldown — try again shortly', 'error')
+      } else {
+        setStatus(msg || 'Unstake failed — check your staked balance', 'error')
+      }
     }
     setLoading(false)
   }
 
-  // ── Claim Rewards ────────────────────────────────────────────────────────
+  // ── Claim ────────────────────────────────────────────────────────────────
   async function handleClaim() {
     if (!isConnected || !address) { setStatus('Connect your wallet first', 'error'); return }
     setLoading(true)
@@ -276,10 +279,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       tx.moveCall({
         target: `${pkgId}::moonbags_stake::claim_staking_pool`,
         typeArguments: [coinType],
-        arguments: [
-          tx.object(configId),
-          tx.object(SUI_CLOCK),
-        ],
+        arguments: [tx.object(configId), tx.object(SUI_CLOCK)],
       })
       setStatus('Approve in wallet…', 'info')
       const result = await signAndExecuteTransaction({ transaction: tx, chain: 'sui:mainnet' })
@@ -301,8 +301,8 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         </p>
       </div>
 
-      {/* Pending rewards + staked balance */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Pending rewards + wallet + staked */}
+      <div className="grid grid-cols-3 gap-3">
         <div className="bg-white/5 rounded-lg p-3 border border-white/5">
           <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Pending Rewards</div>
           <div className="text-sm font-bold text-[#D4AF37]">
@@ -312,6 +312,12 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         <div className="bg-white/5 rounded-lg p-3 border border-white/5">
           <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">In Wallet</div>
           <div className="text-sm font-bold text-white">{fromMist(walletBalance)} {symbol}</div>
+        </div>
+        <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Staked</div>
+          <div className="text-sm font-bold text-white">
+            {stakedBalance !== null ? `${fromMist(stakedBalance)} ${symbol}` : '—'}
+          </div>
         </div>
       </div>
 
@@ -331,9 +337,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
             <button
               type="button"
               onClick={() => {
-                if (walletBalance > 0n) {
-                  setStakeInput(fromMist(walletBalance).replace(/,/g, ''))
-                }
+                if (walletBalance > 0n) setStakeInput(fromMist(walletBalance).replace(/,/g, ''))
               }}
               disabled={walletBalance === 0n || loading || !isConnected}
               className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md bg-white/10 border border-gray-600 text-[10px] font-bold text-gray-300 hover:bg-white/20 transition-colors disabled:opacity-50"
@@ -356,14 +360,28 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       <div>
         <label className="block text-xs text-gray-400 mb-1.5">Unstake amount</label>
         <div className="flex gap-2">
-          <input
-            type="number"
-            min="0"
-            value={unstakeInput}
-            onChange={e => setUnstakeInput(e.target.value)}
-            placeholder="0"
-            className="flex-1 bg-white/5 border border-gray-700 rounded-xl py-2.5 px-3 text-white placeholder:text-gray-600 focus:outline-none focus:border-red-500/50 text-sm"
-          />
+          <div className="relative flex-1">
+            <input
+              type="number"
+              min="0"
+              value={unstakeInput}
+              onChange={e => setUnstakeInput(e.target.value)}
+              placeholder="0"
+              className="w-full bg-white/5 border border-gray-700 rounded-xl py-2.5 pl-3 pr-14 text-white placeholder:text-gray-600 focus:outline-none focus:border-red-500/50 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (stakedBalance !== null && stakedBalance > 0n) {
+                  setUnstakeInput(fromMist(stakedBalance).replace(/,/g, ''))
+                }
+              }}
+              disabled={stakedBalance === null || stakedBalance === 0n || loading || !isConnected}
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md bg-white/10 border border-gray-600 text-[10px] font-bold text-gray-300 hover:bg-white/20 transition-colors disabled:opacity-50"
+            >
+              MAX
+            </button>
+          </div>
           <button
             onClick={handleUnstake}
             disabled={loading || !isConnected}
