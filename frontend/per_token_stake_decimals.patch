@@ -1,0 +1,60 @@
+--- a/frontend/components/coin/PerTokenStakePanel.tsx
++++ b/frontend/components/coin/PerTokenStakePanel.tsx
+@@ -57,6 +57,12 @@
+   const [walletBalance, setWalletBalance] = useState<bigint>(0n)
+   const [stakedBalance, setStakedBalance] = useState<bigint | null>(null)
+   const [pendingReward, setPendingReward] = useState<bigint | null>(null)
++  // Token decimals come from on-chain CoinMetadata<Token>.decimals, NOT from
++  // the Configuration's stored `token_decimals` field (that's a display
++  // preference, not authoritative). AIDA-fork bonding-curve tokens are
++  // typically 6-decimal; SUI-fork tokens typically 9-decimal. We default
++  // to 6 for the first render and overwrite once the metadata fetch lands.
++  const [tokenDecimals, setTokenDecimals] = useState<number>(6)
+   const [stakeInput, setStakeInput] = useState('')
+   const [unstakeInput, setUnstakeInput] = useState('')
+   const [loading, setLoading] = useState(false)
+@@ -106,20 +112,40 @@
+ 
+   useEffect(() => { refreshBalances() }, [refreshBalances])
+ 
++  // Fetch the token's real on-chain decimals once per coinType. Frozen
++  // at token publish, so no need to re-fetch. Default stays at 6 if the
++  // fetch fails — worst case the display reads off by 10^3 until the
++  // user refreshes, no fund-at-risk.
++  useEffect(() => {
++    let cancelled = false
++    ;(async () => {
++      try {
++        const meta = await suiClient.getCoinMetadata({ coinType })
++        if (!cancelled && meta && typeof meta.decimals === 'number') {
++          setTokenDecimals(meta.decimals)
++        }
++      } catch {
++        // Leave default
++      }
++    })()
++    return () => { cancelled = true }
++  }, [coinType, suiClient])
++
+   // ── Helpers ────────────────────────────────────────────────────────────────
+   function setStatus(msg: string, type: 'info' | 'success' | 'error' = 'info') {
+     setStatusMsg(msg); setStatusType(type)
+   }
+ 
+-  // Assume TOKEN_DECIMALS = 6 for bonding-curve meme tokens (matches create flow).
+-  const TOKEN_DECIMALS = 6
++  // Convert user-entered amounts and on-chain mist using the token's
++  // actual decimals (set in CoinMetadata at the token's publish). See
++  // useEffect below for the fetch.
+   function toMist(amount: string): bigint {
+     const v = parseFloat(amount)
+     if (!isFinite(v) || v <= 0) return 0n
+-    return BigInt(Math.floor(v * 10 ** TOKEN_DECIMALS))
++    return BigInt(Math.floor(v * 10 ** tokenDecimals))
+   }
+   function fromMist(m: bigint): string {
+-    return (Number(m) / 10 ** TOKEN_DECIMALS).toLocaleString(undefined, { maximumFractionDigits: 4 })
++    return (Number(m) / 10 ** tokenDecimals).toLocaleString(undefined, { maximumFractionDigits: 4 })
+   }
+   // Both AIDA and SUI are 9-decimal, so the same conversion works for either.
+   function fromRewardMist(m: bigint): string {
