@@ -3,7 +3,8 @@ import { SuiClient } from '@mysten/sui/client'
 import { Transaction } from '@mysten/sui/transactions'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
-import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
+import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE, AIDA_METADATA_ID } from '@/lib/contracts_aida'
+import { CETUS_CONTRACT } from '@/lib/contracts'
 
 // One-time admin route to force-graduate a stuck AIDA-paired bonding pool.
 //
@@ -95,18 +96,55 @@ export async function GET(req: Request) {
     }
     const [payCoin] = tx.splitCoins(base, [tx.pure.u64(coinAmount)])
 
-    tx.moveCall({
-      target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags::buy_exact_in_with_lock`,
-      typeArguments: [tokenType],
-      arguments: [
-        tx.object(MOONBAGS_AIDA_CONTRACT.configuration),
-        tx.object(MOONBAGS_AIDA_CONTRACT.lockConfig),
-        payCoin,
-        tx.pure.u64(amountInMist),
-        tx.pure.u64(1),                  // min_tokens_out = 1 (accept anything nonzero)
-        tx.object(SUI_CLOCK),
-      ],
-    })
+    // V5 inline-migration, env-gated. For a stuck pool on its last dust-
+    // sized buy, inline migration lets the very tx that clears the curve
+    // also create the Cetus pool + burn LP — same trip, no follow-up
+    // cron cycle needed. Falls back to the 6-arg dump path if metadata
+    // can't be resolved or the flag is off.
+    const inlineEnabled = process.env.NEXT_PUBLIC_INLINE_MIGRATION_ENABLED === 'true'
+    let inlineBuilt = false
+    if (inlineEnabled) {
+      try {
+        const tokenMeta = await client.getCoinMetadata({ coinType: tokenType })
+        if (tokenMeta?.id) {
+          tx.moveCall({
+            target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags::buy_exact_in_with_lock_inline`,
+            typeArguments: [tokenType],
+            arguments: [
+              tx.object(MOONBAGS_AIDA_CONTRACT.configuration),
+              tx.object(MOONBAGS_AIDA_CONTRACT.lockConfig),
+              payCoin,
+              tx.pure.u64(amountInMist),
+              tx.pure.u64(1),
+              tx.object(CETUS_CONTRACT.burnManager),
+              tx.object(CETUS_CONTRACT.pools),
+              tx.object(CETUS_CONTRACT.globalConfig),
+              tx.object(AIDA_METADATA_ID),
+              tx.object(tokenMeta.id),
+              tx.object(SUI_CLOCK),
+            ],
+          })
+          inlineBuilt = true
+        }
+      } catch (_e) {
+        // Fall through.
+      }
+    }
+
+    if (!inlineBuilt) {
+      tx.moveCall({
+        target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags::buy_exact_in_with_lock`,
+        typeArguments: [tokenType],
+        arguments: [
+          tx.object(MOONBAGS_AIDA_CONTRACT.configuration),
+          tx.object(MOONBAGS_AIDA_CONTRACT.lockConfig),
+          payCoin,
+          tx.pure.u64(amountInMist),
+          tx.pure.u64(1),                  // min_tokens_out = 1 (accept anything nonzero)
+          tx.object(SUI_CLOCK),
+        ],
+      })
+    }
 
     const result = await client.signAndExecuteTransaction({
       transaction: tx,

@@ -1,0 +1,102 @@
+--- a/frontend/app/bondingcurve/coins/[slug]/page.tsx
++++ b/frontend/app/bondingcurve/coins/[slug]/page.tsx
+@@ -21,7 +21,7 @@
+   PLATFORM_TOKEN_CONTRACT,
+   getMoonbagsContractForPackage,
+ } from '@/lib/contracts'
+-import { AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
++import { AIDA_COIN_TYPE, AIDA_METADATA_ID, getPairType } from '@/lib/contracts_aida'
+ 
+ // V11 was a fresh publish using the same shared config/lockConfig as legacy.
+ // It's now grouped under MOONBAGS_LEGACY_PACKAGE_IDS but needs separate routing
+@@ -668,6 +668,20 @@
+   // routed bundle is cheaper than maintaining a list of known pkgIds.
+   const isStrippedBuy = mbagsContract !== MOONBAGS_CONTRACT_LEGACY
+ 
++  // V5 inline-migration opt-in. When the env flag is set AND the buy is
++  // AIDA-paired, the frontend calls `buy_exact_in_with_lock_inline` instead
++  // of `buy_exact_in_with_lock`. The new entry accepts Cetus object refs
++  // + both CoinMetadata objects and, on the graduating buy, creates the
++  // Cetus pool + burns the LP in the same PTB — removing the cron-async
++  // graduation path and its whole failure surface (cursor drift, indexer
++  // gaps, Vercel deploy timing, admin coin discovery). Toggle by flipping
++  // NEXT_PUBLIC_INLINE_MIGRATION_ENABLED — no code redeploy needed to roll
++  // back, just set it to 'false' and force a re-render.
++  //
++  // SUI-pair path unchanged: the SUI fork already migrates inline via its
++  // own transfer_pool → init_cetus_pool chain, so the 6-arg buy works as-is.
++  const inlineMigrationEnabled = process.env.NEXT_PUBLIC_INLINE_MIGRATION_ENABLED === 'true'
++
+   const handleTrade = async () => {
+     if (!poolData || !address || !amount || parseFloat(amount) <= 0) return
+     setTxError(null)
+@@ -751,18 +765,57 @@
+         const buyPkg = isV11Pool ? V11_PKG_ID : mbagsContract.packageId
+         const buyCfg = mbagsContract.configuration
+         const buyLock = mbagsContract.lockConfig
+-        tx.moveCall({
+-          target: `${buyPkg}::moonbags::buy_exact_in_with_lock`,
+-          typeArguments: [poolData.coinType],
+-          arguments: [
+-            tx.object(buyCfg),
+-            tx.object(buyLock),
+-            suiCoin,
+-            tx.pure.u64(amountInMist),
+-            tx.pure.u64(minTokensOut > 0n ? minTokensOut : 1n),
+-            tx.object(SUI_CLOCK),
+-          ],
+-        })
++
++        // V5 inline-migration path — AIDA-pair only, env-gated. Fetches the
++        // token's CoinMetadata (frozen at pool creation, so anyone can
++        // reference it), then calls the 11-arg `buy_exact_in_with_lock_inline`
++        // entry so a graduating buy creates the Cetus pool + burns LP in
++        // the same PTB. Non-graduating buys pay a small gas overhead for
++        // passing the extra Cetus refs through untouched.
++        let inlineBuilt = false
++        if (inlineMigrationEnabled && pairType === 'AIDA') {
++          const tokenMeta = await suiClient.getCoinMetadata({ coinType: poolData.coinType })
++          if (!tokenMeta?.id) {
++            // Fail open: fall back to the non-inline path rather than
++            // blocking the buy entirely if metadata can't be resolved.
++            // The cron still catches graduations from this flow.
++            console.warn('[inline-migration] CoinMetadata lookup failed for', poolData.coinType, '— falling back to dump-path buy')
++          } else {
++            tx.moveCall({
++              target: `${buyPkg}::moonbags::buy_exact_in_with_lock_inline`,
++              typeArguments: [poolData.coinType],
++              arguments: [
++                tx.object(buyCfg),
++                tx.object(buyLock),
++                suiCoin,
++                tx.pure.u64(amountInMist),
++                tx.pure.u64(minTokensOut > 0n ? minTokensOut : 1n),
++                tx.object(CETUS_CONTRACT.burnManager),
++                tx.object(CETUS_CONTRACT.pools),
++                tx.object(CETUS_CONTRACT.globalConfig),
++                tx.object(AIDA_METADATA_ID),
++                tx.object(tokenMeta.id),
++                tx.object(SUI_CLOCK),
++              ],
++            })
++            inlineBuilt = true
++          }
++        }
++
++        if (!inlineBuilt) {
++          tx.moveCall({
++            target: `${buyPkg}::moonbags::buy_exact_in_with_lock`,
++            typeArguments: [poolData.coinType],
++            arguments: [
++              tx.object(buyCfg),
++              tx.object(buyLock),
++              suiCoin,
++              tx.pure.u64(amountInMist),
++              tx.pure.u64(minTokensOut > 0n ? minTokensOut : 1n),
++              tx.object(SUI_CLOCK),
++            ],
++          })
++        }
+       } else {
+         // Legacy v7 chain: 10-arg buy with Cetus pool/burn manager deps
+         tx.moveCall({
