@@ -1573,7 +1573,13 @@ export default function CoinPage() {
     setLoading(true)
 
     const attempt = async (): Promise<void> => {
-      const BACKOFFS_MS = [400, 1200, 3000]
+      // Extended backoff schedule — public Sui RPC can be slow enough
+      // that 3 quick retries (old: 400/1200/3000, ~4.6s total) flip the
+      // UI to the error card before the RPC has had a fair chance to
+      // return. 4 attempts over ~19 seconds covers the vast majority
+      // of transient slowness without punishing healthy loads (first
+      // attempt still runs immediately).
+      const BACKOFFS_MS = [800, 2500, 6000, 10000]
       let tokenData: PoolToken | null = null
       let tradeData: TradeEvent[] = []
 
