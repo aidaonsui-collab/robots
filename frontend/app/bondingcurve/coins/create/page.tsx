@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCurrentWallet, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { ConnectButton } from '@mysten/dapp-kit'
@@ -102,7 +102,22 @@ function toAscii(input: string, maxLen: number): string {
 // v11 contract always sends graduated funds to admin wallet via transfer_pool.
 // The cron (/api/cron/graduate) auto-creates a Momentum CLMM pool within ~5 minutes.
 
+// Wrapper — Next 16 requires useSearchParams() to be under a Suspense
+// boundary so the static prerender can bail out cleanly. The actual
+// component is CreateTokenPageInner below; this export just wraps it.
 export default function CreateTokenPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#07070e] text-white flex items-center justify-center">
+        <div className="text-gray-500">Loading…</div>
+      </div>
+    }>
+      <CreateTokenPageInner />
+    </Suspense>
+  )
+}
+
+function CreateTokenPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   // Agent-creation flow (via /agents/create → /bondingcurve/coins/create?agent=true).
