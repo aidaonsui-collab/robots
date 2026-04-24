@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useCurrentWallet, useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { useCurrentWallet, useCurrentAccount, useSuiClient, useSuiClientQuery, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import { Loader2, Gift, TrendingUp, TrendingDown } from 'lucide-react'
 import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
@@ -19,9 +19,9 @@ interface Props {
 
 // Per-token staking widget. Stakers of the meme token (e.g. HERO) share the
 // small portion of trading fees that the contract routes to meme stakers
-// (currently ~1bp of fees per the init_stake_fee_withdraw config, so rewards
-// are typically modest — the bulk goes to AIDA stakers via the global
-// /staking page).
+// (currently ~10% of fees per the init_stake_fee_withdraw config), so
+// rewards are meaningful — see the /staking page for the ~25% that goes
+// to AIDA stakers globally instead.
 //
 // Works for both AIDA-paired and SUI-paired pools. The SUI fork's
 // moonbags_stake module is structurally identical to the AIDA fork's —
@@ -76,21 +76,36 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error'>('info')
 
   // ── Query wallet balance of this token ───────────────────────────────────
-  const refreshBalances = useCallback(async () => {
-    if (!address) {
+  // Use the exact same RPC pattern as the parent Trade tab to avoid any
+  // drift. `useSuiClientQuery` is cache-aware and refetches on key
+  // changes; the previous direct `suiClient.getBalance` call was
+  // returning zero for some users even when Trade showed the real
+  // amount. Pattern mirrors the bonding-curve page's tokenCoinsData.
+  const { data: tokenCoinsData, refetch: refetchTokenCoins } = useSuiClientQuery(
+    'getCoins',
+    { owner: address ?? '', coinType },
+    { enabled: !!address && !!coinType }
+  )
+  useEffect(() => {
+    if (!tokenCoinsData?.data?.length) {
       setWalletBalance(0n)
       return
     }
-    try {
-      const bal = await suiClient.getBalance({ owner: address, coinType })
-      setWalletBalance(BigInt(bal.totalBalance))
-    } catch {
-      setWalletBalance(0n)
-    }
+    const total = tokenCoinsData.data.reduce(
+      (s: bigint, c: any) => s + BigInt(c.balance),
+      0n,
+    )
+    setWalletBalance(total)
+  }, [tokenCoinsData])
 
-    // Attempt to read the user's pending rewards via devInspect.
-    // calculate_rewards_earned returns a u64 in reward-coin mist
-    // (AIDA mist for AIDA pairs, SUI mist for SUI pairs — both 9-decimal).
+  // Pending-rewards read — stays on the direct devInspect path because
+  // calculate_rewards_earned isn't a simple RPC; it's a move-call that
+  // returns a u64 we decode from BCS.
+  const refreshRewards = useCallback(async () => {
+    if (!address) {
+      setPendingReward(null)
+      return
+    }
     try {
       const tx = new Transaction()
       tx.moveCall({
@@ -116,7 +131,13 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     }
   }, [address, coinType, suiClient, configId, pkgId])
 
-  useEffect(() => { refreshBalances() }, [refreshBalances])
+  useEffect(() => { refreshRewards() }, [refreshRewards])
+
+  // Convenience combined refresher — stake/unstake/claim handlers call
+  // this after a successful tx lands.
+  const refreshBalances = useCallback(async () => {
+    await Promise.all([refreshRewards(), refetchTokenCoins()])
+  }, [refreshRewards, refetchTokenCoins])
 
   // Fetch the token's real on-chain decimals once per coinType. Frozen
   // at token publish, so no need to re-fetch. Default stays at 6 if the
@@ -289,29 +310,31 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       <div>
         <label className="block text-xs text-gray-400 mb-1.5">Stake amount</label>
         <div className="flex gap-2">
-          <input
-            type="number"
-            min="0"
-            value={stakeInput}
-            onChange={e => setStakeInput(e.target.value)}
-            placeholder="0"
-            className="flex-1 bg-white/5 border border-gray-700 rounded-xl py-2.5 px-3 text-white placeholder:text-gray-600 focus:outline-none focus:border-emerald-500/50 text-sm"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (walletBalance > 0n) {
-                // Strip commas from locale-formatted display so the input's
-                // type="number" accepts it. Uses the same decimals the
-                // stake/unstake calls use, so round-tripping to mist is exact.
-                setStakeInput(fromMist(walletBalance).replace(/,/g, ''))
-              }
-            }}
-            disabled={walletBalance === 0n || loading || !isConnected}
-            className="px-3 py-2.5 rounded-xl bg-white/5 border border-gray-700 text-gray-300 text-xs font-bold hover:bg-white/10 transition-colors disabled:opacity-50"
-          >
-            MAX
-          </button>
+          <div className="relative flex-1">
+            <input
+              type="number"
+              min="0"
+              value={stakeInput}
+              onChange={e => setStakeInput(e.target.value)}
+              placeholder="0"
+              className="w-full bg-white/5 border border-gray-700 rounded-xl py-2.5 pl-3 pr-14 text-white placeholder:text-gray-600 focus:outline-none focus:border-emerald-500/50 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (walletBalance > 0n) {
+                  // Strip commas from locale-formatted display so the input's
+                  // type="number" accepts it. Uses the same decimals the
+                  // stake/unstake calls use, so round-tripping to mist is exact.
+                  setStakeInput(fromMist(walletBalance).replace(/,/g, ''))
+                }
+              }}
+              disabled={walletBalance === 0n || loading || !isConnected}
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md bg-white/10 border border-gray-600 text-[10px] font-bold text-gray-300 hover:bg-white/20 transition-colors disabled:opacity-50"
+            >
+              MAX
+            </button>
+          </div>
           <button
             onClick={handleStake}
             disabled={loading || !isConnected}
