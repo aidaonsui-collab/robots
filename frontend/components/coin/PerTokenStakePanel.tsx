@@ -260,12 +260,18 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       await refreshBalances()
     } catch (e: any) {
       const msg = e?.message || ''
-      if (msg.includes('EStakingPoolNotExist') || msg.includes('3,-1')) {
+      const abortMatch = msg.match(/abort code[': ]+(\d+)/i)
+      const abortCode = abortMatch ? parseInt(abortMatch[1]) : null
+      if (msg.includes('EStakingPoolNotExist') || abortCode === 1 || msg.includes('3,-1')) {
         setStatus('Staking pool not initialized for this token', 'error')
-      } else if (msg.includes('EInsufficientBalance') || msg.includes('13375')) {
+      } else if (msg.includes('EAccountBalanceNotEnough') || abortCode === 4 || msg.includes('4,')) {
         setStatus('Insufficient staked balance', 'error')
-      } else if (msg.includes('EDenyUnstake') || msg.includes('13376')) {
+      } else if (msg.includes('EUnstakeDeadlineNotAllow') || abortCode === 8 || msg.includes('8,')) {
         setStatus('Unstake temporarily denied (cooldown active)', 'error')
+      } else if (msg.includes('EStakingAccountNotExist') || abortCode === 3 || msg.includes('3,')) {
+        setStatus('No staking position found for this token', 'error')
+      } else if (msg.includes('EInvalidAmount') || abortCode === 6) {
+        setStatus('Invalid unstake amount', 'error')
       } else {
         setStatus(msg || 'Unstake failed — check your staked balance', 'error')
       }
