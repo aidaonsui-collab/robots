@@ -31,10 +31,12 @@ module odyssey_founder_nft::founder_nft {
     use sui::display;
     use sui::event;
     use sui::package;
+    use sui::table::{Self, Table};
     use sui::transfer_policy::{Self, TransferPolicy, TransferPolicyCap};
 
     // ── Error codes ───────────────────────────────────────────
     const EEmptyString: u64 = 1;
+    const EAlreadyMinted: u64 = 2;
 
     // ── One-time witness ──────────────────────────────────────
     // Must match the module name in uppercase.
@@ -63,6 +65,21 @@ module odyssey_founder_nft::founder_nft {
     // wallet. Transferring this cap transfers minting authority.
     public struct AdminCap has key, store {
         id: UID,
+    }
+
+    // ── Registry ──────────────────────────────────────────────
+    // Shared object enforcing one-NFT-per-pool. Defense-in-depth on
+    // top of the AdminCap gate: even if the AdminCap key leaks, an
+    // attacker can't mint a second Founder NFT for the same pool —
+    // the on-chain assert blocks it.
+    //
+    // Also useful for off-chain lookups: anyone can query whether a
+    // pool already has a Founder NFT (and which one) without
+    // scanning every wallet's owned objects.
+    public struct Registry has key {
+        id: UID,
+        // pool_id → founder_nft_id
+        minted: Table<ID, ID>,
     }
 
     // ── Events ────────────────────────────────────────────────
@@ -127,6 +144,13 @@ module odyssey_founder_nft::founder_nft {
 
         let admin_cap = AdminCap { id: object::new(ctx) };
 
+        // Shared registry — one mint per pool_id, forever.
+        let registry = Registry {
+            id: object::new(ctx),
+            minted: table::new(ctx),
+        };
+        transfer::share_object(registry);
+
         let sender = tx_context::sender(ctx);
         transfer::public_transfer(publisher, sender);
         transfer::public_transfer(display, sender);
@@ -135,10 +159,12 @@ module odyssey_founder_nft::founder_nft {
     }
 
     // ── Mint ──────────────────────────────────────────────────
-    // Called once per agent at creation time. AdminCap-gated —
-    // Odyssey's admin keypair is the only wallet that can mint.
+    // Called once per agent at creation time. AdminCap-gated +
+    // Registry-deduped: even if the AdminCap leaks, only one NFT
+    // can ever exist per pool.
     public entry fun mint(
         _: &AdminCap,
+        registry: &mut Registry,
         recipient: address,
         agent_id: address,
         pool_id: ID,
@@ -150,6 +176,7 @@ module odyssey_founder_nft::founder_nft {
     ) {
         assert!(!agent_name.is_empty(), EEmptyString);
         assert!(!agent_symbol.is_empty(), EEmptyString);
+        assert!(!table::contains(&registry.minted, pool_id), EAlreadyMinted);
 
         let minted_at_ms = clock::timestamp_ms(clock);
         let nft = OdysseyFounderNFT {
@@ -164,6 +191,8 @@ module odyssey_founder_nft::founder_nft {
         let nft_id = object::id(&nft);
         let agent_name_copy = nft.agent_name;
         let agent_symbol_copy = nft.agent_symbol;
+
+        table::add(&mut registry.minted, pool_id, nft_id);
 
         event::emit(FounderNFTMinted {
             nft_id,
@@ -199,4 +228,13 @@ module odyssey_founder_nft::founder_nft {
     public fun agent_symbol(nft: &OdysseyFounderNFT): &String { &nft.agent_symbol }
     public fun image_url(nft: &OdysseyFounderNFT): &String { &nft.image_url }
     public fun minted_at_ms(nft: &OdysseyFounderNFT): u64 { nft.minted_at_ms }
+
+    // Registry lookups for off-chain code.
+    public fun is_minted(registry: &Registry, pool_id: ID): bool {
+        table::contains(&registry.minted, pool_id)
+    }
+
+    public fun get_nft_id(registry: &Registry, pool_id: ID): ID {
+        *table::borrow(&registry.minted, pool_id)
+    }
 }
