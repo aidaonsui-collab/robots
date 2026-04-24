@@ -91,6 +91,16 @@ export interface Agent {
   // Runtime
   openclawSessionId?: string
   status: 'creating' | 'active' | 'paused' | 'stopped'
+
+  // Founder NFT — Sui object id of the on-chain NFT minted at agent
+  // creation. Owned by whoever currently controls the creator fee
+  // stream (initially creatorAddress, transferable on TradePort).
+  // Manual fee distribution looks this up to find the current
+  // recipient. Optional because mint is best-effort: if the env vars
+  // for the founder_nft package aren't set, the agent record is
+  // still created without an NFT (degrades gracefully during the
+  // pre-publish window).
+  founderNftId?: string
   
   // Stripe card
   stripeCardId?: string
