@@ -1,0 +1,36 @@
+# ============================================================
+# Odyssey Founder NFT — mainnet publish record
+#
+# Published 2026-04-24 to Sui mainnet. Single shared Move type
+# OdysseyFounderNFT so TradePort only indexes the collection once;
+# every future agent's Founder NFT auto-appears under the same
+# collection page.
+#
+# Two publish txs exist on mainnet. The first (0x9bc75c…) was
+# compiled from a draft branch and has a unicode quirk in the
+# Display template. It's abandoned — do NOT wire it into the
+# frontend. The clean re-publish at 0xc8b561… below is the canonical
+# package; all env vars + move-call targets should use this id.
+#
+# Shared objects (Registry, TransferPolicy) + owned caps (AdminCap,
+# TransferPolicyCap, Publisher, Display, UpgradeCap) were all
+# minted at init and won't change across future upgrades.
+# ============================================================
+
+[package]
+published-at = "0xc8b56110ebd4f85e98a5aa04732ae70851a16c5ec56259267f86abd7aace0f6e"
+version = 1
+
+# Object IDs captured at publish (for frontend env vars + admin scripts).
+[objects]
+admin_cap          = "0xd2750a6fe81630ba928967e8159af76dca18a9ea72f34581a1bc9d517a73eb59"  # owned by admin wallet
+registry           = "0x1910dec975a1ae588fa829801a5a35e8abff273ad04ac033091ed43a95a1e45f"  # shared
+transfer_policy    = "0xecb6146f4d45906ac1d516cd993eb63f75e02c76c721ce8613913aed90779237"  # shared
+transfer_policy_cap = "0x534584e345f04fd678112ab8662a1eea7b73d09aceb1044885de4258917b8dca"  # owned
+publisher          = "0x3ccefee71b3dff4442722c06373a78b6631954690a0b26ec395a75a926e9d816"  # owned
+display            = "0x856d9f5f17a37b56ba1a95809fbfcf979987777c691fd7078e5c2a57ad86c0f5"  # owned
+upgrade_cap        = "0xfd0da9b910c8d05c268b5906c3b85ed690f3e5bf561bc84961c97bb7b8b5fb38"  # owned
+
+# Abandoned first-publish id (kept for reference; do NOT use).
+[abandoned]
+first_publish      = "0x9bc75c"
