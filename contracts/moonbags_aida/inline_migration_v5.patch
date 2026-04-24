@@ -1,0 +1,238 @@
+--- a/contracts/moonbags_aida/sources/moonbags_aida.move
++++ b/contracts/moonbags_aida/sources/moonbags_aida.move
+@@ -1355,6 +1355,235 @@
+         result as u128
+     }
+ 
++    // === V5 INLINE-MIGRATION ENTRIES ======================================
++    //
++    // Added 2026-04-24. Mirrors the SUI fork's pattern: the user-signed buy
++    // tx that fills the bonding curve ALSO creates the Cetus pool + burns
++    // the LP, all in a single atomic PTB. No cron, no admin keypair, no
++    // separate migration step — graduation becomes one hop.
++    //
++    // These entries are ADDITIVE. `buy_exact_in_with_lock` and
++    // `buy_exact_in_returns_with_lock` stay untouched so existing pools
++    // and frontends keep working through the old dump-to-admin +
++    // init_cetus_aida_pool_v2 flow until the frontend fully cuts over.
++    //
++    // Caller threads five extra args through each buy:
++    //   cetus_burn_manager / cetus_pools / cetus_global_config — mainnet
++    //     Cetus shared objects, same IDs the admin cron passes today.
++    //   metadata_aida  — mainnet singleton CoinMetadata<AIDA>.
++    //   metadata_token — the token's CoinMetadata<Token>. Already frozen
++    //     at pool creation (see create_and_lock_first_buy_with_fee), so
++    //     by the time a buy runs anyone can reference it.
++    //
++    // Args are required on every buy, not just graduating ones. Non-
++    // graduating buys pass the refs through without touching them. Same
++    // tradeoff the SUI fork made — small gas overhead per buy for a
++    // large simplification of the graduation path.
++    //
++    // Next milestone (separate PR): create_and_lock_first_buy_with_fee_inline
++    // so a launch-plus-graduating-first-buy tx also migrates inline.
++    // Rare in practice; existing cron fallback + /api/admin/migrate-pool
++    // cover that gap until then.
++
++    public entry fun buy_exact_in_with_lock_inline<Token>(
++        configuration: &mut Configuration,
++        token_lock_config: &TokenLockConfig,
++        coin_sui: Coin<AIDA>,
++        amount_in: u64,
++        amount_out_min: u64,
++        cetus_burn_manager: &mut BurnManager,
++        cetus_pools: &mut Pools,
++        cetus_global_config: &mut GlobalConfig,
++        metadata_aida: &CoinMetadata<AIDA>,
++        metadata_token: &CoinMetadata<Token>,
++        clock: &Clock,
++        ctx: &mut TxContext,
++    ) {
++        let (coin_sui_out, coin_token_out) = buy_exact_in_returns_with_lock_inline<Token>(
++            configuration,
++            token_lock_config,
++            coin_sui,
++            amount_in,
++            amount_out_min,
++            cetus_burn_manager,
++            cetus_pools,
++            cetus_global_config,
++            metadata_aida,
++            metadata_token,
++            clock,
++            ctx,
++        );
++        transfer::public_transfer<Coin<AIDA>>(coin_sui_out, ctx.sender());
++        transfer::public_transfer<Coin<Token>>(coin_token_out, ctx.sender());
++    }
++
++    // Public returns variant — mirrors buy_exact_in_returns_with_lock.
++    // Body is intentionally copy-pasted rather than refactored into a
++    // shared helper: Move upgrades compose best when new paths are
++    // independent of old ones, so a bug in the inline path can't
++    // regress the dump-path flow. Only meaningful delta is the
++    // transfer_pool_inline call (vs transfer_pool).
++    public fun buy_exact_in_returns_with_lock_inline<Token>(
++        configuration: &mut Configuration,
++        token_lock_config: &TokenLockConfig,
++        mut coin_sui: Coin<AIDA>,
++        amount_in: u64,
++        amount_out_min: u64,
++        cetus_burn_manager: &mut BurnManager,
++        cetus_pools: &mut Pools,
++        cetus_global_config: &mut GlobalConfig,
++        metadata_aida: &CoinMetadata<AIDA>,
++        metadata_token: &CoinMetadata<Token>,
++        clock: &Clock,
++        ctx: &mut TxContext,
++    ): (Coin<AIDA>, Coin<Token>) {
++        assert_version(configuration.version);
++        let total_sui_in = coin::value<AIDA>(&coin_sui);
++        assert!(total_sui_in >= amount_in, EInsufficientInput);
++        assert!(amount_in > 0, EInvalidInput);
++
++        let token_address = type_name::get<Token>();
++        let pool = dynamic_object_field::borrow_mut<String, Pool<Token>>(&mut configuration.id, type_name::get_address(&token_address));
++
++        assert!(!pool.is_completed, ECompletedPool);
++
++        let amount_out_swap = curves::calculate_remove_liquidity_return(pool.virtual_sui_reserves, pool.virtual_token_reserves, amount_in);
++        let token_reserves_in_pool = pool.virtual_token_reserves - get_virtual_remain_token_reserves(pool);
++
++        let (actual_amount_out, amount_in_swap) = if (amount_out_swap > token_reserves_in_pool) {
++            let actual_out = token_reserves_in_pool;
++            let required_sui = curves::calculate_add_liquidity_cost(pool.virtual_sui_reserves, pool.virtual_token_reserves, actual_out) + 1;
++            (actual_out, required_sui)
++        } else {
++            (amount_out_swap, amount_in)
++        };
++
++        assert!(actual_amount_out >= amount_out_min, EInvalidInput);
++
++        let fee = utils::as_u64(utils::div(utils::mul(utils::from_u64(amount_in_swap), utils::from_u64(configuration.platform_fee)), utils::from_u64(FEE_DENOMINATOR)));
++        coin::join(&mut pool.fee_recipient, coin::split<AIDA>(&mut coin_sui, fee, ctx));
++
++        assert!(total_sui_in >= amount_in_swap + fee, EInsufficientInput);
++
++        let (mut coin_token_out, coin_sui_out) = swap<Token>(pool, coin::zero<Token>(ctx), coin_sui, actual_amount_out, total_sui_in - amount_in_swap - fee, ctx);
++
++        pool.virtual_token_reserves = pool.virtual_token_reserves - coin::value<Token>(&coin_token_out);
++
++        let traded_event = TradedEventV2 {
++            is_buy                 : true,
++            user                   : ctx.sender(),
++            token_address          : type_name::into_string(token_address),
++            sui_amount             : amount_in_swap,
++            token_amount           : actual_amount_out,
++            virtual_sui_reserves   : pool.virtual_sui_reserves,
++            virtual_token_reserves : pool.virtual_token_reserves,
++            real_sui_reserves      : coin::value<AIDA>(&pool.real_sui_reserves),
++            real_token_reserves    : coin::value<Token>(&pool.real_token_reserves),
++            pool_id                : object::id(pool),
++            fee                    : fee,
++            ts                     : clock::timestamp_ms(clock),
++        };
++        emit<TradedEventV2>(traded_event);
++
++        // The atomic graduation point. If this buy drained the last
++        // tokens, migrate to Cetus in the same tx — no cron needed.
++        if (actual_amount_out == token_reserves_in_pool) {
++            transfer_pool_inline<Token>(
++                configuration.admin,
++                pool,
++                cetus_burn_manager,
++                cetus_pools,
++                cetus_global_config,
++                metadata_aida,
++                metadata_token,
++                clock,
++                ctx,
++            );
++        };
++
++        if (dynamic_field::exists_(&pool.id, POOL_CREATION_TIMESTAMP_FIELD)) {
++            let creation_timestamp_ms = *dynamic_field::borrow<vector<u8>, u64>(&pool.id, POOL_CREATION_TIMESTAMP_FIELD);
++            let current_timestamp_ms = clock::timestamp_ms(clock);
++
++            let buy_block_duration_ms = *dynamic_field::borrow<vector<u8>, u64>(&configuration.id, BUY_BLOCK_DURATION_FIELD);
++            let lock_buy_duration_ms = *dynamic_field::borrow<vector<u8>, u64>(&configuration.id, LOCK_BUY_DURATION_FIELD);
++
++            if (current_timestamp_ms - creation_timestamp_ms < buy_block_duration_ms) {
++                let end_time = current_timestamp_ms + lock_buy_duration_ms;
++                let locked_token = coin_token_out;
++                let amount_lock_token = coin::value<Token>(&locked_token);
++
++                moonbags_token_lock::create_lock(token_lock_config, locked_token, ctx.sender(), amount_lock_token, end_time, clock, ctx);
++
++                coin_token_out = coin::zero<Token>(ctx);
++            }
++        };
++
++        (coin_sui_out, coin_token_out)
++    }
++
++    // Inline transfer_pool. Drains the bonding pool into two coins, emits
++    // the standard completion + migration events (so analytics, the old
++    // cron, and any downstream tooling keep observing graduations in a
++    // consistent shape), then feeds the coins straight into
++    // init_cetus_aida_pool_inner. Everything runs inside the buy tx
++    // that filled the curve — atomic and signer-authorized.
++    //
++    // AIDA only supports Cetus as the graduation DEX in V5 (Turbos was
++    // never wired end-to-end), so unlike the SUI fork's transfer_pool
++    // there's no bonding_dex branch here.
++    fun transfer_pool_inline<Token>(
++        admin: address,
++        pool: &mut Pool<Token>,
++        cetus_burn_manager: &mut BurnManager,
++        cetus_pools: &mut Pools,
++        cetus_global_config: &mut GlobalConfig,
++        metadata_aida: &CoinMetadata<AIDA>,
++        metadata_token: &CoinMetadata<Token>,
++        clock: &Clock,
++        ctx: &mut TxContext,
++    ) {
++        pool.is_completed = true;
++
++        let real_token_reserves_val   = coin::value<Token>(&pool.real_token_reserves);
++        let remain_token_reserves_val = coin::value<Token>(&pool.remain_token_reserves);
++        let real_sui_reserves_val     = coin::value<AIDA>(&pool.real_sui_reserves);
++
++        let mut coin_token = coin::split<Token>(&mut pool.real_token_reserves, real_token_reserves_val, ctx);
++        coin::join<Token>(&mut coin_token, coin::split<Token>(&mut pool.remain_token_reserves, remain_token_reserves_val, ctx));
++
++        let coin_aida = coin::split<AIDA>(&mut pool.real_sui_reserves, real_sui_reserves_val, ctx);
++
++        let pool_completed_event = PoolCompletedEventV2 {
++            token_address : type_name::into_string(type_name::get<Token>()),
++            lp            : ascii::string(b"0x0"),
++            ts            : clock::timestamp_ms(clock),
++        };
++        emit<PoolCompletedEventV2>(pool_completed_event);
++
++        emit<PoolMigratingEvent>(PoolMigratingEvent {
++            token_address   : type_name::into_string(type_name::get<Token>()),
++            sui_amount      : coin::value<AIDA>(&coin_aida),
++            token_amount    : coin::value<Token>(&coin_token),
++            bonding_dex     : 0,
++            ts              : clock::timestamp_ms(clock),
++        });
++
++        init_cetus_aida_pool_inner<Token>(
++            admin,
++            pool,
++            coin_aida,
++            coin_token,
++            cetus_burn_manager,
++            cetus_pools,
++            cetus_global_config,
++            metadata_aida,
++            metadata_token,
++            clock,
++            ctx,
++        );
++    }
++
+     #[test_only]
+     public(package) fun borrow_mut_pool<Token>(configuration: &mut Configuration): &mut Pool<Token> {
+         let token_address = type_name::get<Token>();
