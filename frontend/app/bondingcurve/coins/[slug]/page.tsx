@@ -1560,16 +1560,20 @@ export default function CoinPage() {
   //   4. The periodic 5s poll (below) also resets `loadFailed` on
   //      success, so recovery happens automatically when the RPC comes
   //      back online.
+  // Initial + manual-retry fetch. 3-retry-with-backoff on every run —
+  // the background poll no longer triggers this effect (it has its own
+  // useEffect below), so the retry flow can't be cancelled out from
+  // underneath itself. refetchCount is still in deps so the "Try again
+  // now" button and post-trade refresh path continue to work.
   useEffect(() => {
     if (!slug) return
     let cancelled = false
     const decodedSlug = decodeURIComponent(slug)
-    const isInitial = refetchCount === 0
 
-    if (isInitial) setLoading(true)
+    setLoading(true)
 
     const attempt = async (): Promise<void> => {
-      const BACKOFFS_MS = isInitial ? [400, 1200, 3000] : [0]
+      const BACKOFFS_MS = [400, 1200, 3000]
       let tokenData: PoolToken | null = null
       let tradeData: TradeEvent[] = []
 
@@ -1595,8 +1599,11 @@ export default function CoinPage() {
       if (tokenData) {
         setPoolData(tokenData)
         setLoadFailed(false)
-      } else if (isInitial) {
-        // All retries failed on initial load — show the error state.
+      } else {
+        // All retries failed — show the error state on every run, not
+        // just the first. Previously only the first run set loadFailed,
+        // which let stale null state persist after a cancelled initial
+        // fetch.
         setLoadFailed(true)
       }
 
@@ -1643,14 +1650,59 @@ export default function CoinPage() {
     return () => { cancelled = true }
   }, [slug, refetchCount])
 
-  // Background poll: refetch trades every 5s while the tab is visible so
-  // other wallets' trades surface without a manual page refresh. Pauses
-  // when the tab is hidden to save RPC budget.
+  // Background poll: refetch poolData + trades every 5s directly
+  // (no refetchCount bump) so other wallets' trades surface without a
+  // manual page refresh AND without cancelling the initial retry flow.
+  // Previously this bumped refetchCount which caused the "have to
+  // refresh multiple times" bug — the bump cancelled the initial
+  // 3-retry-with-backoff fetch mid-flight, and the subsequent run was
+  // single-shot with no retry. If the RPC was slow, the UI got stuck
+  // rendering mock fallback data with "Loading..." as the name.
   useEffect(() => {
     if (!slug) return
-    const tick = () => {
+    const decodedSlug = decodeURIComponent(slug)
+    const tick = async () => {
       if (typeof document !== 'undefined' && document.hidden) return
-      setRefetchCount(c => c + 1)
+      try {
+        const [tokenData, tradeData] = await Promise.all([
+          fetchPoolToken(decodedSlug),
+          fetchPoolTrades(decodedSlug),
+        ])
+        if (tokenData) {
+          setPoolData(tokenData)
+          setLoadFailed(false)
+        }
+        if (tradeData.length > 0) {
+          const mapped: TradeRow[] = tradeData.map(t => ({
+            type: t.isBuy ? 'buy' as const : 'sell' as const,
+            address: shortenAddr(t.user),
+            user: t.user,
+            suiAmount: t.suiAmount,
+            tokenAmount: Math.round(t.tokenAmount),
+            price: t.price,
+            time: formatTimeAgo(t.timestampMs),
+            txDigest: t.txDigest || undefined,
+          }))
+          setTrades(prev => {
+            const confirmedDigests = new Set(mapped.map(t => t.txDigest).filter(Boolean) as string[])
+            const unconfirmedOptimistic = prev.filter(t => t.txDigest && !confirmedDigests.has(t.txDigest))
+            return [...unconfirmedOptimistic, ...[...mapped].reverse()]
+          })
+          const history: PricePoint[] = tradeData
+            .slice()
+            .reverse()
+            .map(t => ({
+              time: t.timestampMs,
+              value: t.price,
+              isBuy: t.isBuy,
+              suiAmount: t.suiAmount,
+            }))
+          if (history.length > 0 && tokenData) {
+            history.push({ time: Date.now(), value: tokenData.currentPrice })
+          }
+          setPriceHistory(history)
+        }
+      } catch { /* ignore — next tick will try again */ }
     }
     const iv = setInterval(tick, 5_000)
     return () => clearInterval(iv)
