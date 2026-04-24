@@ -137,7 +137,7 @@ const AIDA_PAIR_CFG_TO_PKG: Record<string, string> = {
   // the original id 0x593a2e87… because Sui anchors event type strings to
   // the module's original-id across upgrades.
   '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09':
-    '0x23e754414a8e5b26b0c16f16afed69bd90560dc184b466f58045ceb64a7e43c0',
+    '0xcee80ee8d9b4d56054c07fe90f8ab05a8a61e58f6762a6133a4eb474db20915b',
   // V3 — 2026-04-23 fresh publish (superseded by the V2 upgrade above;
   // kept here for any wallet that staked on V3 between its publish and
   // the upgrade, so their stake surface still unstakes cleanly).

@@ -3,7 +3,7 @@ import { SuiClient } from '@mysten/sui/client'
 import { Transaction } from '@mysten/sui/transactions'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
-import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
+import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE, MOONBAGS_AIDA_V2_ORIGINAL_PKG } from '@/lib/contracts_aida'
 
 // Periodically distribute accrued trading fees from every active AIDA-paired
 // bonding-curve pool. The Move function `withdraw_fee_bonding_curve<Token, AIDA>`
@@ -51,7 +51,7 @@ function getAdminKeypair(): Ed25519Keypair {
 // Fetch every pool that emitted CreatedEventV2 under the AIDA package.
 // Returns [{ poolId, tokenType }].
 async function fetchAidaPools(): Promise<Array<{ poolId: string, tokenType: string }>> {
-  const eventType = `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags::CreatedEventV2`
+  const eventType = `${MOONBAGS_AIDA_V2_ORIGINAL_PKG}::moonbags::CreatedEventV2`
   const out: Array<{ poolId: string, tokenType: string }> = []
   let cursor: any = null
 
