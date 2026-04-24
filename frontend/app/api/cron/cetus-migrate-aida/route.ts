@@ -14,50 +14,49 @@ import { kv } from '@vercel/kv'
 
 // Cetus auto-migration cron for AIDA-pair bonding pools.
 //
-// Flow:
-//   1. Bonding curve fills → transfer_pool dumps real + remain token reserves
-//      + real_sui (AIDA) reserves to the admin wallet and emits
-//      PoolMigratingEvent + PoolCompletedEventV2.
-//   2. This cron polls for PoolMigratingEvents on the AIDA V2 original-id
-//      (event types are pinned to original-id regardless of which upgrade
-//      emitted them). For each event it hasn't processed yet, it picks up
-//      the dumped coins and calls init_cetus_aida_pool_v2 on the latest
-//      upgraded package, which creates the Cetus CLMM pool, burns the LP
-//      position via lp_burn, and records a BURN_PROOF_FIELD dynamic field
-//      on the bonding pool.
+// Two event paths handled:
 //
-// The cron is idempotent: it skips any pool that already has a burn_proof
-// dynamic field, so re-running it after a successful migration is a no-op.
-// Event dedup is kept in Vercel KV as a belt-and-suspenders check against
-// transient failures that leave no burn_proof but partially consumed gas.
+//   1. PoolMigratingEvent — emitted by `transfer_pool` on natural
+//      graduation (buy fills the curve). Event carries the exact
+//      sui_amount + token_amount dumped to admin, so migrate() slices
+//      those exact amounts out of admin's coins (preserves the
+//      deterministic initial Cetus price).
+//
+//   2. PoolCompletedEventV2 — emitted by BOTH `transfer_pool` (natural)
+//      AND `early_complete_pool` (admin force-graduation gated by
+//      ThresholdConfig). The force-graduation path does NOT emit
+//      PoolMigratingEvent, so pools created that way were invisible to
+//      this cron before this change. The second loop picks them up:
+//      idempotency-checks the pool (burn_proof dynamic field present?),
+//      and if not yet migrated, passes whole admin-owned coins —
+//      Cetus's fix_amount_a rebalances and refunds residuals back to
+//      admin.
+//
+// Both loops converge on the same migrate() and share the burn_proof
+// dynamic-field idempotency check, so re-running after a successful
+// migration is a no-op for either event type.
 //
 // Required env:
-//   ADMIN_WALLET_SECRET   — the admin wallet's private key (same as the
-//                            distribute-fees cron). Suiprivkey1…-style
-//                            encoding, raw base64, or 0x-hex.
-//   CRON_SECRET           — (optional) Bearer token Vercel Cron sends on
-//                            the Authorization header.
-//
-// Cron schedule in vercel.json — every 30s is enough; graduations aren't
-// frequent and each call that finds no pending events is a cheap no-op.
+//   ADMIN_WALLET_SECRET   — admin keypair (same as distribute-fees cron)
+//   CRON_SECRET           — optional Bearer auth
 
 export const dynamic = 'force-dynamic'
 
 const SUI_RPC = 'https://fullnode.mainnet.sui.io'
 const SUI_CLOCK = '0x0000000000000000000000000000000000000000000000000000000000000006'
 
-// The packageId move calls target — latest upgrade with init_cetus_aida_pool_v2.
 const MIGRATION_PKG = MOONBAGS_AIDA_CONTRACT.packageId
 // Events are anchored to the original V2 publish id forever.
-const EVENT_TYPE = `${MOONBAGS_AIDA_V2_ORIGINAL_PKG}::moonbags::PoolMigratingEvent`
+const MIGRATING_EVENT_TYPE = `${MOONBAGS_AIDA_V2_ORIGINAL_PKG}::moonbags::PoolMigratingEvent`
+const COMPLETED_EVENT_TYPE = `${MOONBAGS_AIDA_V2_ORIGINAL_PKG}::moonbags::PoolCompletedEventV2`
 
-// Vercel KV cursor so repeat invocations skip already-handled events.
-const KV_CURSOR_KEY = 'cetus-migrate-aida:cursor'
+// Independent cursors so the two loops can advance without blocking.
+const KV_CURSOR_KEY_MIGRATING = 'cetus-migrate-aida:cursor'
+const KV_CURSOR_KEY_COMPLETED = 'cetus-migrate-aida:cursor:completed'
 
-// Don't attempt migration on events older than this. Protects against
-// replaying ancient graduations when the cron is first deployed into a
-// pool with years of history.
-const MAX_EVENT_AGE_MS = 24 * 60 * 60 * 1000 // 24h
+// Don't attempt migration on events older than this — avoids replaying
+// ancient graduations on first deploy of a new cursor.
+const MAX_EVENT_AGE_MS = 24 * 60 * 60 * 1000
 
 async function rpc<T = any>(method: string, params: any[]): Promise<T> {
   const res = await fetch(SUI_RPC, {
@@ -85,20 +84,24 @@ function getAdminKeypair(): Ed25519Keypair {
   }
 }
 
+type EventSource = 'migrating' | 'completed'
+
 interface PendingMigration {
-  tokenType: string          // fully-qualified `0xaddr::mod::TYPE`
-  tokenTypeRaw: string        // as emitted by the event (no leading 0x)
-  suiAmount: bigint           // AIDA dumped to admin
-  tokenAmount: bigint         // Token dumped to admin
-  poolEventTs: number         // event timestamp (ms)
-  eventDigest: string         // tx digest that emitted PoolMigratingEvent
+  tokenType: string
+  // Exact amounts when sourced from PoolMigratingEvent; undefined when
+  // sourced from PoolCompletedEventV2 (force-graduation has no amounts
+  // in the event — migrate() falls back to whole-coin mode).
+  suiAmount?: bigint
+  tokenAmount?: bigint
+  poolEventTs: number
+  eventDigest: string
+  source: EventSource
 }
 
-async function fetchPendingMigrations(cursor: any): Promise<{ pending: PendingMigration[]; nextCursor: any; hasNextPage: boolean }> {
-  // Descending=false so we see the oldest un-processed events first.
-  // Vercel KV stores the cursor as the last seen event id.
+async function fetchPending(eventType: string, source: EventSource, cursor: any): Promise<{ pending: PendingMigration[]; nextCursor: any; hasNextPage: boolean }> {
+  // Ascending (descending=false) so we process oldest un-handled events first.
   const data = await rpc('suix_queryEvents', [
-    { MoveEventType: EVENT_TYPE },
+    { MoveEventType: eventType },
     cursor,
     50,
     false,
@@ -113,19 +116,16 @@ async function fetchPendingMigrations(cursor: any): Promise<{ pending: PendingMi
     if (!tokenTypeRaw) continue
     const tokenType = tokenTypeRaw.startsWith('0x') ? tokenTypeRaw : `0x${tokenTypeRaw}`
 
-    const suiAmount = BigInt(pj.sui_amount ?? 0)
-    const tokenAmount = BigInt(pj.token_amount ?? 0)
     const poolEventTs = Number(pj.ts ?? e.timestampMs ?? 0)
-
     if (poolEventTs && now - poolEventTs > MAX_EVENT_AGE_MS) continue
 
     pending.push({
       tokenType,
-      tokenTypeRaw,
-      suiAmount,
-      tokenAmount,
+      suiAmount: source === 'migrating' ? BigInt(pj.sui_amount ?? 0) : undefined,
+      tokenAmount: source === 'migrating' ? BigInt(pj.token_amount ?? 0) : undefined,
       poolEventTs,
       eventDigest: e.id?.txDigest || '',
+      source,
     })
   }
 
@@ -136,33 +136,21 @@ async function fetchPendingMigrations(cursor: any): Promise<{ pending: PendingMi
   }
 }
 
-// Check whether the bonding pool has the burn_proof dynamic field. Used
-// both as the primary "already migrated" check and as the success signal
-// after a migration tx lands.
-//
-// `BURN_PROOF_FIELD` in the contract is `b"burn_proof"` stored via
-// `dynamic_object_field::add`. Sui's RPC wraps that key in
-// `dynamic_object_field::Wrapper<vector<u8>>`, but the concrete shape of
-// `f.name.value` varies across RPC versions (raw array, hex string, or
-// `{name: [...]}`). Probe all three shapes instead of assuming one.
+// burn_proof dynamic field detection. The field key is `b"burn_proof"`
+// stored via dynamic_object_field::add; Sui's RPC wraps it in
+// Wrapper<vector<u8>> and the concrete f.name.value shape varies
+// across RPC versions — probe all three shapes.
 function fieldNameMatchesBurnProof(name: any): boolean {
   const target = 'burn_proof'
   const targetBytes = [0x62, 0x75, 0x72, 0x6e, 0x5f, 0x70, 0x72, 0x6f, 0x6f, 0x66]
   if (!name) return false
-  // Shape A: raw byte array.
   if (Array.isArray(name)) {
     return name.length === targetBytes.length && name.every((b, i) => b === targetBytes[i])
   }
-  // Shape B: hex string (with or without 0x prefix).
   if (typeof name === 'string') {
     const hex = name.startsWith('0x') ? name.slice(2) : name
-    try {
-      return Buffer.from(hex, 'hex').toString() === target
-    } catch {
-      return name === target
-    }
+    try { return Buffer.from(hex, 'hex').toString() === target } catch { return name === target }
   }
-  // Shape C: nested wrapper `{name: [...]}` or `{value: [...]}`.
   if (typeof name === 'object') {
     if ('name' in name) return fieldNameMatchesBurnProof((name as any).name)
     if ('value' in name) return fieldNameMatchesBurnProof((name as any).value)
@@ -171,17 +159,10 @@ function fieldNameMatchesBurnProof(name: any): boolean {
 }
 
 async function isAlreadyMigrated(poolId: string): Promise<boolean> {
-  // Iterate all dynamic fields on the bonding pool (paginated). The pool
-  // only carries a handful of fields in practice, so one page usually
-  // suffices — we still loop in case the admin has queued many.
   let cursor: any = null
   for (let page = 0; page < 10; page++) {
     let list: any
-    try {
-      list = await rpc('suix_getDynamicFields', [poolId, cursor, 50])
-    } catch {
-      return false
-    }
+    try { list = await rpc('suix_getDynamicFields', [poolId, cursor, 50]) } catch { return false }
     for (const f of list?.data ?? []) {
       if (fieldNameMatchesBurnProof(f?.name?.value)) return true
     }
@@ -191,12 +172,7 @@ async function isAlreadyMigrated(poolId: string): Promise<boolean> {
   return false
 }
 
-// Find the bonding pool object id for a given token type by walking
-// Configuration's dynamic fields. This matches the on-chain dynamic_field
-// storage key — Token's type-name address.
 async function findBondingPoolId(tokenType: string): Promise<string | null> {
-  // The dynamic_field key Move uses is `type_name::get_address(&type_name::get<Token>())`
-  // which equals the address portion of the coin type, ASCII-encoded.
   const tokenAddr = tokenType.replace(/^0x/, '').split('::')[0]
   try {
     const dyn = await rpc('suix_getDynamicFieldObject', [
@@ -205,7 +181,6 @@ async function findBondingPoolId(tokenType: string): Promise<string | null> {
     ])
     return dyn?.data?.objectId ?? null
   } catch {
-    // Fallback: iterate dynamic fields and match by objectType.
     let cursor: any = null
     for (let page = 0; page < 10; page++) {
       const list = await rpc('suix_getDynamicFields', [MOONBAGS_AIDA_CONTRACT.configuration, cursor, 50])
@@ -219,21 +194,26 @@ async function findBondingPoolId(tokenType: string): Promise<string | null> {
   }
 }
 
-// Find an admin-owned Coin<X> whose balance is at least `minAmount`. Prefer
-// the object with balance CLOSEST to `minAmount` so we don't split a giant
-// coin when a small one already matches. Returns `null` if nothing fits.
-async function findAdminCoin(owner: string, coinType: string, minAmount: bigint): Promise<{ id: string; balance: bigint } | null> {
+// minAmount-aware: if specified, prefers the smallest coin that still
+// covers the amount (avoids splitting a giant coin when a small one
+// matches). If omitted, returns the largest available coin.
+async function findAdminCoin(owner: string, coinType: string, minAmount?: bigint): Promise<{ id: string; balance: bigint } | null> {
   const res = await rpc('suix_getCoins', [owner, coinType, null, 200])
   const coins: Array<{ coinObjectId: string; balance: string }> = res?.data ?? []
-  const candidates = coins
-    .map(c => ({ id: c.coinObjectId, balance: BigInt(c.balance) }))
-    .filter(c => c.balance >= minAmount)
-    .sort((a, b) => (a.balance < b.balance ? -1 : a.balance > b.balance ? 1 : 0))
-  return candidates[0] ?? null
+  const mapped = coins.map(c => ({ id: c.coinObjectId, balance: BigInt(c.balance) }))
+  if (minAmount !== undefined) {
+    const candidates = mapped
+      .filter(c => c.balance >= minAmount)
+      .sort((a, b) => (a.balance < b.balance ? -1 : a.balance > b.balance ? 1 : 0))
+    return candidates[0] ?? null
+  }
+  const sorted = mapped.sort((a, b) => (a.balance > b.balance ? -1 : a.balance < b.balance ? 1 : 0))
+  return sorted[0] ?? null
 }
 
 interface MigrationResult {
   tokenType: string
+  source: EventSource
   status: 'migrated' | 'already-migrated' | 'skipped:no-coin' | 'error' | 'no-pool'
   digest?: string
   error?: string
@@ -241,51 +221,51 @@ interface MigrationResult {
 
 async function migrate(pending: PendingMigration, client: SuiClient, keypair: Ed25519Keypair): Promise<MigrationResult> {
   const admin = keypair.getPublicKey().toSuiAddress()
-  const { tokenType, suiAmount, tokenAmount } = pending
+  const { tokenType, suiAmount, tokenAmount, source } = pending
 
   const poolId = await findBondingPoolId(tokenType)
   if (!poolId) {
-    return { tokenType, status: 'no-pool', error: 'bonding pool not found in Configuration dynamic fields' }
+    return { tokenType, source, status: 'no-pool', error: 'bonding pool not found in Configuration dynamic fields' }
   }
 
   if (await isAlreadyMigrated(poolId)) {
-    return { tokenType, status: 'already-migrated' }
+    return { tokenType, source, status: 'already-migrated' }
   }
 
-  // Find the dumped coins. The graduation tx creates coins with balances
-  // equal to sui_amount + token_amount exactly, so those are our targets.
-  // If the exact coins were consumed by another op, findAdminCoin will
-  // fall back to the smallest coin that covers the amount.
   const aidaCoin = await findAdminCoin(admin, AIDA_COIN_TYPE, suiAmount)
   const tokenCoin = await findAdminCoin(admin, tokenType, tokenAmount)
   if (!aidaCoin || !tokenCoin) {
     return {
       tokenType,
+      source,
       status: 'skipped:no-coin',
-      error: `aidaCoin=${!!aidaCoin} tokenCoin=${!!tokenCoin} (sui_amount=${suiAmount}, token_amount=${tokenAmount})`,
+      error: `aidaCoin=${!!aidaCoin} tokenCoin=${!!tokenCoin} suiAmount=${suiAmount ?? 'whole-coin'} tokenAmount=${tokenAmount ?? 'whole-coin'}`,
     }
   }
 
-  // Need the token's CoinMetadata<T> object — Cetus's create_pool_v2
-  // requires it for ticker + decimals metadata.
   let metadataObjId: string
   try {
     const meta = await rpc('suix_getCoinMetadata', [tokenType])
     metadataObjId = meta?.id
     if (!metadataObjId) throw new Error('CoinMetadata missing id')
   } catch (e: any) {
-    return { tokenType, status: 'error', error: `CoinMetadata lookup failed: ${e.message}` }
+    return { tokenType, source, status: 'error', error: `CoinMetadata lookup failed: ${e.message}` }
   }
 
   const tx = new Transaction()
   tx.setSender(admin)
   tx.setGasBudget(500_000_000)
 
-  // Split exact-amount slices off the admin's whole coins so the remainder
-  // stays in the wallet as change instead of getting swallowed by Cetus's
-  // fix_amount_a rebalancing.
-  const [aidaSlice] = tx.splitCoins(tx.object(aidaCoin.id), [tx.pure.u64(suiAmount)])
-  const [tokenSlice] = tx.splitCoins(tx.object(tokenCoin.id), [tx.pure.u64(tokenAmount)])
+  // Exact-amount slicing when we know what transfer_pool dumped
+  // (PoolMigratingEvent); otherwise whole admin coin (PoolCompletedEventV2
+  // force-graduation path — no amounts available, Cetus rebalances and
+  // refunds residuals).
+  const aidaArg = suiAmount !== undefined
+    ? tx.splitCoins(tx.object(aidaCoin.id), [tx.pure.u64(suiAmount)])[0]
+    : tx.object(aidaCoin.id)
+  const tokenArg = tokenAmount !== undefined
+    ? tx.splitCoins(tx.object(tokenCoin.id), [tx.pure.u64(tokenAmount)])[0]
+    : tx.object(tokenCoin.id)
 
   tx.moveCall({
     target: `${MIGRATION_PKG}::moonbags::init_cetus_aida_pool_v2`,
@@ -293,8 +273,8 @@ async function migrate(pending: PendingMigration, client: SuiClient, keypair: Ed
     arguments: [
       tx.pure.address(admin),
       tx.object(MOONBAGS_AIDA_CONTRACT.configuration),
-      aidaSlice,
-      tokenSlice,
+      aidaArg,
+      tokenArg,
       tx.object(CETUS_CONTRACT.burnManager),
       tx.object(CETUS_CONTRACT.pools),
       tx.object(CETUS_CONTRACT.globalConfig),
@@ -313,13 +293,56 @@ async function migrate(pending: PendingMigration, client: SuiClient, keypair: Ed
     const ok = result.effects?.status?.status === 'success'
     return {
       tokenType,
+      source,
       status: ok ? 'migrated' : 'error',
       digest: result.digest,
       error: ok ? undefined : JSON.stringify(result.effects?.status),
     }
   } catch (e: any) {
-    return { tokenType, status: 'error', error: e.message }
+    return { tokenType, source, status: 'error', error: e.message }
   }
+}
+
+async function runLoop(
+  eventType: string,
+  source: EventSource,
+  cursorKey: string,
+  client: SuiClient,
+  keypair: Ed25519Keypair,
+  processedPools: Set<string>,
+): Promise<{ results: MigrationResult[]; scanned: number }> {
+  const results: MigrationResult[] = []
+  let scanned = 0
+
+  let cursor: any = null
+  try { cursor = (await kv.get<any>(cursorKey)) ?? null } catch { /* KV optional */ }
+  let lastSeenCursor: any = cursor
+
+  for (let page = 0; page < 10; page++) {
+    const { pending, nextCursor, hasNextPage } = await fetchPending(eventType, source, cursor)
+    scanned += pending.length
+
+    for (const p of pending) {
+      // Natural graduation emits BOTH event types. If loop 1 already
+      // migrated this pool in the current invocation, short-circuit
+      // here to skip a redundant burn_proof lookup. Across invocations
+      // the burn_proof check inside migrate() catches it anyway.
+      if (processedPools.has(p.tokenType)) {
+        results.push({ tokenType: p.tokenType, source, status: 'already-migrated' })
+        continue
+      }
+      const r = await migrate(p, client, keypair)
+      results.push(r)
+      processedPools.add(p.tokenType)
+    }
+
+    if (nextCursor) lastSeenCursor = nextCursor
+    if (!hasNextPage || !nextCursor) break
+    cursor = nextCursor
+  }
+
+  try { if (lastSeenCursor) await kv.set(cursorKey, lastSeenCursor) } catch { /* non-fatal */ }
+  return { results, scanned }
 }
 
 export async function GET(req: Request) {
@@ -334,45 +357,43 @@ export async function GET(req: Request) {
 
   const client = new SuiClient({ url: SUI_RPC })
   const keypair = getAdminKeypair()
-
-  let cursor: any = null
-  try {
-    cursor = (await kv.get<any>(KV_CURSOR_KEY)) ?? null
-  } catch { /* KV optional; first run starts from beginning */ }
-
-  const results: MigrationResult[] = []
-  let scanned = 0
-  let lastSeenCursor: any = cursor
+  const processedPools = new Set<string>()
+  const allResults: MigrationResult[] = []
+  let totalScanned = 0
 
   try {
-    // Iterate forward until the node says there's nothing newer. Cap at 10
-    // pages per invocation so a huge backlog doesn't blow the Vercel
-    // function timeout.
-    for (let page = 0; page < 10; page++) {
-      const { pending, nextCursor, hasNextPage } = await fetchPendingMigrations(cursor)
-      scanned += pending.length
-      for (const p of pending) {
-        const r = await migrate(p, client, keypair)
-        results.push(r)
-      }
-      if (nextCursor) lastSeenCursor = nextCursor
-      if (!hasNextPage || !nextCursor) break
-      cursor = nextCursor
-    }
+    // Natural graduations first — they have exact amounts, so running
+    // them before the completed-event loop ensures the deterministic
+    // price path wins when both events exist for the same pool.
+    const migratingRun = await runLoop(
+      MIGRATING_EVENT_TYPE, 'migrating', KV_CURSOR_KEY_MIGRATING,
+      client, keypair, processedPools,
+    )
+    allResults.push(...migratingRun.results)
+    totalScanned += migratingRun.scanned
+
+    // Force-graduations (and natural graduations re-observed). Pools
+    // already handled in the first loop are short-circuited by the
+    // processedPools set; anything else that's already migrated in a
+    // prior invocation is caught by the burn_proof check.
+    const completedRun = await runLoop(
+      COMPLETED_EVENT_TYPE, 'completed', KV_CURSOR_KEY_COMPLETED,
+      client, keypair, processedPools,
+    )
+    allResults.push(...completedRun.results)
+    totalScanned += completedRun.scanned
   } catch (e: any) {
-    return NextResponse.json({ error: e.message, results, scanned }, { status: 500 })
+    return NextResponse.json({ error: e.message, results: allResults, scanned: totalScanned }, { status: 500 })
   }
-
-  try {
-    if (lastSeenCursor) await kv.set(KV_CURSOR_KEY, lastSeenCursor)
-  } catch { /* non-fatal */ }
 
   return NextResponse.json({
     ok: true,
-    scanned,
-    migrated: results.filter(r => r.status === 'migrated').length,
-    alreadyMigrated: results.filter(r => r.status === 'already-migrated').length,
-    errors: results.filter(r => r.status === 'error').length,
-    results,
+    scanned: totalScanned,
+    migrated: allResults.filter(r => r.status === 'migrated').length,
+    alreadyMigrated: allResults.filter(r => r.status === 'already-migrated').length,
+    skippedNoCoin: allResults.filter(r => r.status === 'skipped:no-coin').length,
+    errors: allResults.filter(r => r.status === 'error').length,
+    noPool: allResults.filter(r => r.status === 'no-pool').length,
+    results: allResults,
   })
 }
