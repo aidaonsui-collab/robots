@@ -108,6 +108,40 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       // devInspect can fail if the stake pool doesn't exist or user hasn't staked
       setPendingReward(null)
     }
+
+    // Try to read the user's staked balance from the staking pool.
+    // The staking pool is a dynamic object field on configId, keyed by the token type string.
+    // The user's StakingAccount is a dynamic field on the pool, keyed by the user's address.
+    if (address) {
+      try {
+        // Derive the staking pool key (same logic as in the Move contract)
+        const stakingPoolKey = coinType
+        // Get the staking pool object ID from the configuration's dynamic fields
+        const poolFields = await suiClient.getDynamicFields({ parentId: configId, limit: 50 })
+        const poolField = poolFields.data.find(f => f.name.value === stakingPoolKey)
+        if (poolField?.objectId) {
+          // Get the user's StakingAccount from the pool
+          const accountFields = await suiClient.getDynamicFields({ parentId: poolField.objectId, limit: 50 })
+          const accountField = accountFields.data.find(f => f.name.value === address)
+          if (accountField?.objectId) {
+            const accountObj = await suiClient.getObject({ id: accountField.objectId, options: { showContent: true } })
+            const fields = accountObj.data?.content?.fields
+            if (fields && typeof fields.balance === 'number') {
+              setStakedBalance(BigInt(fields.balance))
+            } else if (fields && typeof fields.balance === 'string') {
+              setStakedBalance(BigInt(fields.balance))
+            }
+          } else {
+            setStakedBalance(0n)
+          }
+        } else {
+          // Staking pool doesn't exist for this token
+          setStakedBalance(null)
+        }
+      } catch {
+        setStakedBalance(null)
+      }
+    }
   }, [address, coinType, suiClient, configId, pkgId])
 
   useEffect(() => { refreshBalances() }, [refreshBalances])
@@ -225,7 +259,16 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       setUnstakeInput('')
       await refreshBalances()
     } catch (e: any) {
-      setStatus(e?.message || 'Unstake failed', 'error')
+      const msg = e?.message || ''
+      if (msg.includes('EStakingPoolNotExist') || msg.includes('3,-1')) {
+        setStatus('Staking pool not initialized for this token', 'error')
+      } else if (msg.includes('EInsufficientBalance') || msg.includes('13375')) {
+        setStatus('Insufficient staked balance', 'error')
+      } else if (msg.includes('EDenyUnstake') || msg.includes('13376')) {
+        setStatus('Unstake temporarily denied (cooldown active)', 'error')
+      } else {
+        setStatus(msg || 'Unstake failed — check your staked balance', 'error')
+      }
     }
     setLoading(false)
   }
@@ -265,8 +308,8 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         </p>
       </div>
 
-      {/* Pending rewards + staked balance */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Pending rewards + wallet + staked balance */}
+      <div className="grid grid-cols-3 gap-3">
         <div className="bg-white/5 rounded-lg p-3 border border-white/5">
           <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Pending Rewards</div>
           <div className="text-sm font-bold text-[#D4AF37]">
@@ -276,6 +319,10 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         <div className="bg-white/5 rounded-lg p-3 border border-white/5">
           <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">In Wallet</div>
           <div className="text-sm font-bold text-white">{fromMist(walletBalance)} {symbol}</div>
+        </div>
+        <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Staked</div>
+          <div className="text-sm font-bold text-white">{stakedBalance !== null ? `${fromMist(stakedBalance)} ${symbol}` : '—'}</div>
         </div>
       </div>
 
@@ -314,6 +361,14 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
             placeholder="0"
             className="flex-1 bg-white/5 border border-gray-700 rounded-xl py-2.5 px-3 text-white placeholder:text-gray-600 focus:outline-none focus:border-red-500/50 text-sm"
           />
+          <button
+            onClick={() => { if (stakedBalance !== null && stakedBalance > 0n) setUnstakeInput(fromMist(stakedBalance)) }}
+            disabled={stakedBalance === null || stakedBalance === 0n}
+            className="px-3 py-2 rounded-xl bg-white/10 border border-gray-600 text-gray-300 text-xs font-bold hover:bg-white/20 transition-colors disabled:opacity-30"
+            title="Max unstake"
+          >
+            MAX
+          </button>
           <button
             onClick={handleUnstake}
             disabled={loading || !isConnected}
