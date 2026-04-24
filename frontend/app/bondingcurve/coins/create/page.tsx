@@ -157,10 +157,10 @@ function CreateTokenPageInner() {
   const [creationFeeMist, setCreationFeeMist] = useState<bigint | null>(null)
 
   // Minimum graduation threshold for AIDA-pair launches. Contract floor
-  // is MINIMUM_THRESHOLD = 1,000 AIDA (hardcoded in moonbags_aida.move);
-  // prod UI floor is 20,000,000 AIDA so launches ship with meaningful
-  // liquidity instead of a single whale snapping up 50%+ of supply.
-  const MIN_AIDA = 20_000_000
+  // is MINIMUM_THRESHOLD = 1,000 AIDA (hardcoded in moonbags_aida.move).
+  // UI floor is 10,000 AIDA so creators can test lower thresholds while
+  // the launchpad is in test mode. Bump back up before going production.
+  const MIN_AIDA = 10_000
 
   useEffect(() => {
     if (pairType === 'AIDA' && parseFloat(targetRaise) < MIN_AIDA) {
