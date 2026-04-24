@@ -27,7 +27,7 @@ const DEFAULT_FEE_AIDA_MIST = BigInt(100_000_000_000_000)     // 100,000 AIDA (p
 // agent-creation flow (URL `?agent=true`). Stacks on top of the base
 // pool_creation_fee. Agents get Founder NFT + A2A card + premium tool
 // surface + dashboard — this is the paywall for that bundle.
-const AGENT_PREMIUM_AIDA_MIST = BigInt(150_000_000_000_000)   // 150,000 AIDA premium (agents only)
+const AGENT_PREMIUM_AIDA_MIST = BigInt(1_000_000_000_000_000) // 1,000,000 AIDA premium (agents only)
 type PairType = 'SUI' | 'AIDA';
 
 // Unified bonding-curve config: both SUI and AIDA forks use I = 100M, R = 400M
