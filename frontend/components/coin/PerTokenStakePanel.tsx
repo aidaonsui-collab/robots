@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useCurrentWallet, useCurrentAccount, useSuiClient, useSuiClientQuery, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { useCurrentWallet, useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import { Loader2, Gift, TrendingUp, TrendingDown } from 'lucide-react'
 import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
@@ -50,10 +50,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   const rewardSymbol = isAidaPair ? 'AIDA' : 'SUI'
 
   // Match the parent page: read the SELECTED account (useCurrentAccount),
-  // not accounts[0] on the wallet. Users with multiple accounts in their
-  // wallet would otherwise see a zero balance here even when Trade shows
-  // the correct amount, because the selected account differs from the
-  // first one the wallet exposes.
+  // not accounts[0] on the wallet.
   const { isConnected } = useCurrentWallet()
   const currentAccount = useCurrentAccount()
   const address = currentAccount?.address
@@ -76,27 +73,38 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error'>('info')
 
   // ── Query wallet balance of this token ───────────────────────────────────
-  // Use the exact same RPC pattern as the parent Trade tab to avoid any
-  // drift. `useSuiClientQuery` is cache-aware and refetches on key
-  // changes; the previous direct `suiClient.getBalance` call was
-  // returning zero for some users even when Trade showed the real
-  // amount. Pattern mirrors the bonding-curve page's tokenCoinsData.
-  const { data: tokenCoinsData, refetch: refetchTokenCoins } = useSuiClientQuery(
-    'getCoins',
-    { owner: address ?? '', coinType },
-    { enabled: !!address && !!coinType }
-  )
+  // Direct suiClient.getCoins in useEffect — not useSuiClientQuery. The
+  // react-query wrapper was returning empty even when Trade's equivalent
+  // query worked, which suggests some cache/key collision. Direct call
+  // is simpler, we control exactly when it fires, and console logs let
+  // us diagnose stuck balances from browser devtools.
+  const [balanceTick, setBalanceTick] = useState(0)
+  const refetchTokenCoins = useCallback(() => setBalanceTick(t => t + 1), [])
   useEffect(() => {
-    if (!tokenCoinsData?.data?.length) {
+    if (!address || !coinType) {
       setWalletBalance(0n)
       return
     }
-    const total = tokenCoinsData.data.reduce(
-      (s: bigint, c: any) => s + BigInt(c.balance),
-      0n,
-    )
-    setWalletBalance(total)
-  }, [tokenCoinsData])
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await suiClient.getCoins({ owner: address, coinType })
+        if (cancelled) return
+        const coins = res?.data ?? []
+        const total = coins.reduce((s: bigint, c: any) => s + BigInt(c.balance), 0n)
+        setWalletBalance(total)
+        // eslint-disable-next-line no-console
+        console.log('[stake-panel] getCoins', { address, coinType, count: coins.length, total: total.toString() })
+      } catch (e: any) {
+        if (!cancelled) {
+          setWalletBalance(0n)
+          // eslint-disable-next-line no-console
+          console.error('[stake-panel] getCoins failed', { address, coinType, error: e?.message })
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [address, coinType, suiClient, balanceTick])
 
   // Pending-rewards read — stays on the direct devInspect path because
   // calculate_rewards_earned isn't a simple RPC; it's a move-call that
@@ -136,7 +144,8 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   // Convenience combined refresher — stake/unstake/claim handlers call
   // this after a successful tx lands.
   const refreshBalances = useCallback(async () => {
-    await Promise.all([refreshRewards(), refetchTokenCoins()])
+    refetchTokenCoins()
+    await refreshRewards()
   }, [refreshRewards, refetchTokenCoins])
 
   // Fetch the token's real on-chain decimals once per coinType. Frozen
@@ -323,9 +332,6 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
               type="button"
               onClick={() => {
                 if (walletBalance > 0n) {
-                  // Strip commas from locale-formatted display so the input's
-                  // type="number" accepts it. Uses the same decimals the
-                  // stake/unstake calls use, so round-tripping to mist is exact.
                   setStakeInput(fromMist(walletBalance).replace(/,/g, ''))
                 }
               }}
