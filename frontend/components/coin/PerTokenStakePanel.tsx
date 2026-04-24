@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useCurrentWallet, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { useCurrentWallet, useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import { Loader2, Gift, TrendingUp, TrendingDown } from 'lucide-react'
 import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
@@ -49,8 +49,14 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   // math below is the same.
   const rewardSymbol = isAidaPair ? 'AIDA' : 'SUI'
 
-  const { isConnected, currentWallet } = useCurrentWallet()
-  const address = currentWallet?.accounts?.[0]?.address
+  // Match the parent page: read the SELECTED account (useCurrentAccount),
+  // not accounts[0] on the wallet. Users with multiple accounts in their
+  // wallet would otherwise see a zero balance here even when Trade shows
+  // the correct amount, because the selected account differs from the
+  // first one the wallet exposes.
+  const { isConnected } = useCurrentWallet()
+  const currentAccount = useCurrentAccount()
+  const address = currentAccount?.address
   const suiClient = useSuiClient()
   const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction()
 
