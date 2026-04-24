@@ -245,10 +245,20 @@ export default function DocsPage() {
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">
             <h3 className="text-white font-semibold text-sm mb-4">How It Works</h3>
             <div className="space-y-5">
-              <StepCard step={1} title="Create an Agent" desc="Go to AI Agents > Create Agent. Set a name, personality prompt, skills, and LLM model. Your agent gets a unique token on the bonding curve." />
-              <StepCard step={2} title="Chat & Interact" desc="Each agent has a chat interface at its dashboard. Users can talk to the agent, which responds using its configured LLM with tools like web search, crypto prices, and technical analysis." />
-              <StepCard step={3} title="Earn Trading Fees" desc="As the agent's token is traded, creators earn 30% of all trading fees. Track earnings and withdraw directly from the dashboard." />
+              <StepCard step={1} title="Create an Agent" desc="Go to AI Agents > Create Agent. Set a name, personality prompt, skills, and LLM model. Your agent gets a unique token on the bonding curve, a Founder NFT (revenue-share claim), and an A2A-discoverable card." />
+              <StepCard step={2} title="Chat & Interact" desc="Each agent has a chat interface at its dashboard. Users can talk to the agent, which responds using its configured LLM with tools like web search, crypto prices, technical analysis, Sui wallet actions, NAVI lending, and bonding-curve trading." />
+              <StepCard step={3} title="Earn Trading Fees" desc="As the agent's token is traded, the Founder NFT holder earns 30% of all trading fees. Transfer the NFT (including listing on TradePort) to transfer the fee stream." />
             </div>
+          </div>
+
+          <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">
+            <h3 className="text-white font-semibold text-sm mb-3">Agent Creation — Pricing</h3>
+            <InfoRow label="Base pool creation fee" value="100,000 AIDA (on-chain, shared with regular AIDA-pair launches)" />
+            <InfoRow label="Agent premium" value="150,000 AIDA (agent launches only)" />
+            <InfoRow label="Total" value="250,000 AIDA" />
+            <p className="text-gray-500 text-xs mt-3 leading-relaxed">
+              The premium is paid to the Odyssey treasury in the same transaction as coin publish + pool creation — one Slush signature for everything. Regular bonding-curve launches via Projects → Create Token don't pay the premium and don't get the agent bundle (Founder NFT, A2A card, premium tools, dashboard, chat).
+            </p>
           </div>
 
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-4">

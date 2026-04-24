@@ -3,14 +3,14 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useCurrentWallet, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { ConnectButton } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import { bcs } from '@mysten/sui/bcs'
 import { Rocket, Upload, Globe, Twitter, MessageCircle, Video, Loader2, CheckCircle } from 'lucide-react'
 import axios from 'axios'
-import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V14, CETUS_CONTRACT, SUI_METADATA_ID, BACKEND_URL, SUI_CLOCK } from '@/lib/contracts';
+import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V14, CETUS_CONTRACT, SUI_METADATA_ID, BACKEND_URL, SUI_CLOCK, TREASURY_WALLET } from '@/lib/contracts';
 import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 
 // ── Constants ─────────────────────────────────────────────────
@@ -22,6 +22,12 @@ import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 // on-chain read is in flight or if it fails.
 const DEFAULT_FEE_SUI_MIST  = BigInt(5_000_000_000)           // 5 SUI
 const DEFAULT_FEE_AIDA_MIST = BigInt(100_000_000_000_000)     // 100,000 AIDA (prod default; matches on-chain setter target)
+
+// Extra AIDA paid to TREASURY_WALLET when the launch comes through the
+// agent-creation flow (URL `?agent=true`). Stacks on top of the base
+// pool_creation_fee. Agents get Founder NFT + A2A card + premium tool
+// surface + dashboard — this is the paywall for that bundle.
+const AGENT_PREMIUM_AIDA_MIST = BigInt(150_000_000_000_000)   // 150,000 AIDA premium (agents only)
 type PairType = 'SUI' | 'AIDA';
 
 // Unified bonding-curve config: both SUI and AIDA forks use I = 100M, R = 400M
@@ -98,6 +104,11 @@ function toAscii(input: string, maxLen: number): string {
 
 export default function CreateTokenPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Agent-creation flow (via /agents/create → /bondingcurve/coins/create?agent=true).
+  // Only this path pays the AGENT_PREMIUM_AIDA_MIST surcharge and gets a
+  // Founder NFT minted by /api/agents/create after the on-chain tx lands.
+  const isAgentMode = searchParams?.get('agent') === 'true'
   const { isConnected: connected, currentWallet } = useCurrentWallet()
   const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction()
   const suiClient = useSuiClient()
@@ -379,12 +390,15 @@ export default function CreateTokenPage() {
         const { data: aidaCoins } = await suiClient.getCoins({ owner: address, coinType: AIDA_COIN_TYPE })
         if (!aidaCoins.length) throw new Error('No AIDA coins found in wallet. Please acquire AIDA before creating an AIDA pair pool.')
 
-        // Pick the minimum set of AIDA coin objects that covers fee + firstBuy.
-        // Previously we merged every AIDA coin in the wallet, which made Slush
-        // display "Potential coin outflow" = entire wallet balance — even
-        // though only fee + firstBuy is actually spent. Taking just what we
-        // need caps the scary display at roughly what we're really charging.
-        const needed = feeMist + configSuiMist
+        // Pick the minimum set of AIDA coin objects that covers fee +
+        // firstBuy + (agent premium if launching via /agents/create).
+        // Previously we merged every AIDA coin in the wallet, which made
+        // Slush display "Potential coin outflow" = entire wallet balance —
+        // even though only fee + firstBuy is actually spent. Taking just
+        // what we need caps the scary display at roughly what we're
+        // really charging.
+        const agentPremium = isAgentMode ? AGENT_PREMIUM_AIDA_MIST : 0n
+        const needed = feeMist + configSuiMist + agentPremium
         const sorted = [...aidaCoins].sort((a, b) =>
           Number(BigInt(b.balance) - BigInt(a.balance))
         )
@@ -419,6 +433,15 @@ export default function CreateTokenPage() {
           firstBuy = fb
         } else {
           firstBuy = tx2.moveCall({ target: '0x2::coin::zero', typeArguments: [AIDA_COIN_TYPE], arguments: [] })
+        }
+
+        // Agent-creation premium: split off AGENT_PREMIUM_AIDA_MIST from
+        // the same merged base coin and transfer to the treasury in the
+        // same PTB, so the user signs one tx for coin publish + pool
+        // create + first buy + premium. No separate Slush popup.
+        if (isAgentMode && agentPremium > 0n) {
+          const [premiumCoin] = tx2.splitCoins(baseCoin, [tx2.pure.u64(agentPremium)])
+          tx2.transferObjects([premiumCoin], TREASURY_WALLET)
         }
       } else {
         const [feeCoin] = tx2.splitCoins(tx2.gas, [tx2.pure.u64(feeMist)])
@@ -800,10 +823,22 @@ export default function CreateTokenPage() {
                 <span className="text-gray-500 text-sm">Deployment fee</span>
                 <span className="text-gray-300">{formatFee(creationFeeMist, pairType)}</span>
               </div>
+              {isAgentMode && pairType === 'AIDA' && (
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-purple-500/20">
+                  <span className="text-gray-500 text-sm">Agent premium</span>
+                  <span className="text-[#D4AF37]">
+                    {(Number(AGENT_PREMIUM_AIDA_MIST) / 1e9).toLocaleString()} AIDA
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-purple-500/20">
                 <span className="text-gray-500 text-sm">Total you'll spend</span>
                 <span className="text-gray-300 font-semibold">
-                  {(configSuiVal + (creationFeeMist != null ? Number(creationFeeMist) / 1e9 : 0)).toLocaleString()} {pairType}
+                  {(
+                    configSuiVal
+                    + (creationFeeMist != null ? Number(creationFeeMist) / 1e9 : 0)
+                    + (isAgentMode && pairType === 'AIDA' ? Number(AGENT_PREMIUM_AIDA_MIST) / 1e9 : 0)
+                  ).toLocaleString()} {pairType}
                 </span>
               </div>
               {pairType === 'AIDA' && (
