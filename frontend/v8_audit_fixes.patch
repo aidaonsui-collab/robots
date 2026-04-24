@@ -1,0 +1,50 @@
+--- a/frontend/app/api/cron/distribute-fees/route.ts
++++ b/frontend/app/api/cron/distribute-fees/route.ts
+@@ -3,7 +3,7 @@
+ import { Transaction } from '@mysten/sui/transactions'
+ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
+ import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
+-import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
++import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE, MOONBAGS_AIDA_V2_ORIGINAL_PKG } from '@/lib/contracts_aida'
+ 
+ // Periodically distribute accrued trading fees from every active AIDA-paired
+ // bonding-curve pool. The Move function `withdraw_fee_bonding_curve<Token, AIDA>`
+@@ -50,8 +50,15 @@
+ 
+ // Fetch every pool that emitted CreatedEventV2 under the AIDA package.
+ // Returns [{ poolId, tokenType }].
++//
++// IMPORTANT: Sui pins event type strings to the publish where the struct
++// was FIRST declared, not the current upgraded packageId. `CreatedEventV2`
++// was declared in the V2 original publish at 0x593a2e87…, so filtering
++// by the upgraded packageId (e.g. v8 at 0xcee80ee8…) returns zero events.
++// Always filter by the original id for cross-upgrade event queries —
++// see cetus-migrate-aida/route.ts for the same pattern.
+ async function fetchAidaPools(): Promise<Array<{ poolId: string, tokenType: string }>> {
+-  const eventType = `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags::CreatedEventV2`
++  const eventType = `${MOONBAGS_AIDA_V2_ORIGINAL_PKG}::moonbags::CreatedEventV2`
+   const out: Array<{ poolId: string, tokenType: string }> = []
+   let cursor: any = null
+ 
+--- a/frontend/app/staking/page.tsx
++++ b/frontend/app/staking/page.tsx
+@@ -137,7 +137,7 @@
+   // the original id 0x593a2e87… because Sui anchors event type strings to
+   // the module's original-id across upgrades.
+   '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09':
+-    '0x23e754414a8e5b26b0c16f16afed69bd90560dc184b466f58045ceb64a7e43c0',
++    '0xcee80ee8d9b4d56054c07fe90f8ab05a8a61e58f6762a6133a4eb474db20915b',
+   // V3 — 2026-04-23 fresh publish (superseded by the V2 upgrade above;
+   // kept here for any wallet that staked on V3 between its publish and
+   // the upgrade, so their stake surface still unstakes cleanly).
+--- a/frontend/lib/contracts_aida.ts
++++ b/frontend/lib/contracts_aida.ts
+@@ -118,7 +118,7 @@
+   '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // 2026-04-21 republish (v2 original-id; still appears in type strings)
+   '0x7555b1da30fa1e0d355d18a129b2aafc92c6c9a4529e4d64ff90a2d5e692240f', // 2026-04-23 upgrade of v2 (version 2; built from stale source, no init_cetus_aida_pool)
+   '0x14e35bc96f5739c82e10336700d37716eb5da0d69520a3dc3bdba8385f163629', // 2026-04-23 re-upgrade of v2 (version 4, broken init_cetus_aida_pool sig)
+-  '0xcee80ee8d9b4d56054c07fe90f8ab05a8a61e58f6762a6133a4eb474db20915b', // 2026-04-23 re-upgrade of v2 (version 5, adds init_cetus_aida_pool_v2)
++  '0xcee80ee8d9b4d56054c07fe90f8ab05a8a61e58f6762a6133a4eb474db20915b', // 2026-04-24 v8 — adds buy_exact_in_with_lock_inline (V5 inline migration)
+   '0x69079609ad446344ec8114b9466e04e9210daae60c9289e72037bc5e8cd54a3c', // 2026-04-23 fresh v3 (superseded by v2 upgrade above, left for legacy pools)
+ ] as const
+ 
