@@ -25,7 +25,7 @@ const SECTIONS = [
 
 function SideNav({ active }: { active: string }) {
   return (
-    <nav className="hidden lg:block sticky top-24 w-48 flex-shrink-0">
+    <nav className="hidden lg:block sticky top-24 self-start h-fit max-h-[calc(100vh-7rem)] overflow-y-auto w-48 flex-shrink-0">
       <div className="space-y-1">
         {SECTIONS.map(({ id, label, icon: Icon }) => (
           <a
