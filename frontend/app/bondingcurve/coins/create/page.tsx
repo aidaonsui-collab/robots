@@ -10,7 +10,7 @@ import { Transaction } from '@mysten/sui/transactions'
 import { bcs } from '@mysten/sui/bcs'
 import { Rocket, Upload, Globe, Twitter, MessageCircle, Video, Loader2, CheckCircle } from 'lucide-react'
 import axios from 'axios'
-import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V14, CETUS_CONTRACT, SUI_METADATA_ID, BACKEND_URL, SUI_CLOCK, TREASURY_WALLET } from '@/lib/contracts';
+import { MOONBAGS_CONTRACT_V12, MOONBAGS_CONTRACT_V14, CETUS_CONTRACT, SUI_METADATA_ID, BACKEND_URL, SUI_CLOCK, TREASURY_WALLET, ADMIN_WALLET } from '@/lib/contracts';
 import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 
 // ── Constants ─────────────────────────────────────────────────
@@ -397,7 +397,12 @@ export default function CreateTokenPage() {
         // even though only fee + firstBuy is actually spent. Taking just
         // what we need caps the scary display at roughly what we're
         // really charging.
-        const agentPremium = isAgentMode ? AGENT_PREMIUM_AIDA_MIST : 0n
+        // Internal-testing carve-out: launches signed by the admin wallet
+        // aren't charged the premium at the PTB level. UI summary is
+        // unchanged to everyone, including the admin — the skip is
+        // code-level only and never surfaces in the product.
+        const skipPremium = address === ADMIN_WALLET
+        const agentPremium = (isAgentMode && !skipPremium) ? AGENT_PREMIUM_AIDA_MIST : 0n
         const needed = feeMist + configSuiMist + agentPremium
         const sorted = [...aidaCoins].sort((a, b) =>
           Number(BigInt(b.balance) - BigInt(a.balance))
