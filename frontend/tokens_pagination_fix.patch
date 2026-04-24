@@ -1,0 +1,71 @@
+--- a/frontend/lib/tokens.ts
++++ b/frontend/lib/tokens.ts
+@@ -312,28 +312,48 @@
+     // Post-graduation on-chain balance is zero — fall back to 1B standard launch supply.
+     const totalSupply = remainTokenRaw > 0n ? Number(remainTokenRaw) / 1e6 : 1_000_000_000
+ 
+-    // 2. Fetch creation event for metadata. Query both legacy and v11
+-    //    package namespaces since v11 emits its own event types.
+-    const creationEventResponses = await Promise.all(
+-      EVENT_SOURCE_PACKAGES.map(pkg =>
+-        fetch(RPC, {
+-          method: 'POST',
+-          headers: { 'Content-Type': 'application/json' },
+-          body: JSON.stringify({
+-            jsonrpc: '2.0', id: 2,
+-            method: 'suix_queryEvents',
+-            params: [
+-              { MoveEventType: `${pkg}::moonbags::CreatedEventV2` },
+-              null, 50, false
+-            ]
++    // Find the pool's CreatedEventV2 across every known package namespace.
++    // Paginate descending (newest first, which is most callers' case) and
++    // early-exit per package as soon as we find the matching pool. Caps at
++    // 10 pages × 100 events = 1000 events per package — enough headroom
++    // for years of launches. Old fixed-limit query (`null, 50, false`)
++    // missed any token launched after the 50th — every token from #51
++    // onwards was permanently stuck on the "Loading…" header.
++    const MAX_PAGES_PER_PKG = 10
++    const PAGE_SIZE = 100
++    async function findCreationEvent(pkg: string): Promise<any | null> {
++      let cursor: any = null
++      for (let page = 0; page < MAX_PAGES_PER_PKG; page++) {
++        let json: any
++        try {
++          const res = await fetch(RPC, {
++            method: 'POST',
++            headers: { 'Content-Type': 'application/json' },
++            body: JSON.stringify({
++              jsonrpc: '2.0', id: 2,
++              method: 'suix_queryEvents',
++              params: [
++                { MoveEventType: `${pkg}::moonbags::CreatedEventV2` },
++                cursor, PAGE_SIZE, true,
++              ]
++            })
+           })
+-        }).then(r => r.json()).catch(() => ({ result: { data: [] } }))
+-      )
+-    )
+-    const allCreatedEvents = creationEventResponses.flatMap((j: any) => j?.result?.data || [])
+-    const creationEvent = allCreatedEvents.find(
+-      (e: any) => e.parsedJson?.pool_id === poolId
++          json = await res.json()
++        } catch {
++          return null
++        }
++        const data: any[] = json?.result?.data ?? []
++        const found = data.find((e: any) => e.parsedJson?.pool_id === poolId)
++        if (found) return found
++        if (!json?.result?.hasNextPage || !json?.result?.nextCursor) break
++        cursor = json.result.nextCursor
++      }
++      return null
++    }
++    const creationEventResponses = await Promise.all(
++      EVENT_SOURCE_PACKAGES.map(pkg => findCreationEvent(pkg))
+     )
++    const creationEvent = creationEventResponses.find(e => e !== null)
+ 
+     if (!creationEvent) return null
+     const meta = creationEvent.parsedJson
