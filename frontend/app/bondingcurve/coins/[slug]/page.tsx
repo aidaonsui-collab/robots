@@ -1507,7 +1507,12 @@ export default function CoinPage() {
   const connectedAddress = currentWallet?.accounts?.[0]?.address
   const [activeTab, setActiveTab] = useState<TabId>('txns')
   const [poolData, setPoolData] = useState<PoolToken | null>(null)
-  const [trades, setTrades] = useState<TradeRow[]>(MOCK_TOKEN.trades as TradeRow[])
+  // Start with an empty trade list. A freshly-launched token has no
+  // real trades yet; seeding with MOCK_TOKEN.trades was leaking fake
+  // "0x742d…" transactions into the Txns tab until the background
+  // poll populated real data. For tokens with zero activity (no first
+  // buy, no subsequent trades) the mock rows would never be replaced.
+  const [trades, setTrades] = useState<TradeRow[]>([])
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([])
   const [loading, setLoading] = useState(true)
   const [refetchCount, setRefetchCount] = useState(0)
@@ -1739,7 +1744,7 @@ export default function CoinPage() {
     status: poolData.isCompleted ? 'Completed' as const : 'Bonding' as const,
     totalSupply: poolData.totalSupply ? poolData.totalSupply.toLocaleString() : '1,000,000,000',
     age: 'New',
-    priceHistory: priceHistory.length > 0 ? priceHistory : MOCK_TOKEN.priceHistory,
+    priceHistory: priceHistory,
     trades,
   } : {
     ...MOCK_TOKEN,
@@ -1747,22 +1752,10 @@ export default function CoinPage() {
     symbol: slug?.startsWith('0x') ? '...' : (slug?.split('-')[1]?.toUpperCase() || MOCK_TOKEN.symbol),
   }
 
-  // Only simulate live trades when we don't have real data (fallback mode)
-  useEffect(() => {
-    if (poolData) return  // real data mode - don't simulate
-    const iv = setInterval(() => {
-      const newTrade = {
-        type: Math.random() > 0.5 ? 'buy' as const : 'sell' as const,
-        address: `0x${Math.random().toString(16).slice(2, 10)}...${Math.random().toString(16).slice(2, 6)}`,
-        suiAmount: parseFloat((Math.random() * 12).toFixed(2)),
-        tokenAmount: Math.floor(Math.random() * 3000),
-        price: token.currentPrice + (Math.random() - 0.5) * 0.0001,
-        time: 'Just now',
-      }
-      setTrades(prev => [newTrade as TradeRow, ...prev.slice(0, 14)])
-    }, 5000)
-    return () => clearInterval(iv)
-  }, [poolData])
+  // (removed) — fake-trade simulation interval. Never want mock trades
+  // to appear on real token pages. Slug pages now show only real
+  // on-chain activity; if there are no trades yet, the Txns tab
+  // renders empty.
 
   if (loading) {
     return (
