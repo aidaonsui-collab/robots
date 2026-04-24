@@ -1,0 +1,78 @@
+--- a/frontend/components/coin/PerTokenStakePanel.tsx
++++ b/frontend/components/coin/PerTokenStakePanel.tsx
+@@ -84,11 +84,7 @@
+     return () => { cancelled = true }
+   }, [address, coinType, suiClient, balanceTick])
+ 
+-  // ── Staked balance ───────────────────────────────────────────────────────
+-  // Two-hop dynamic-field lookup: first find the per-token staking pool on
+-  // the stakeConfig (keyed by coinType string), then find the user's
+-  // StakingAccount on that pool (keyed by address), then read the account's
+-  // `balance` field. Null = pool not initialized / read failed. 0n = no stake.
++  // ── Staked balance ───────────────────────────────────────────────────────
+   const [stakedTick, setStakedTick] = useState(0)
+   const refetchStaked = useCallback(() => setStakedTick(t => t + 1), [])
+   useEffect(() => {
+@@ -99,15 +95,40 @@
+     let cancelled = false
+     ;(async () => {
+       try {
+-        const poolFields = await suiClient.getDynamicFields({ parentId: configId, limit: 50 })
+-        if (cancelled) return
+-        const poolField = poolFields.data.find((f: any) => f?.name?.value === coinType)
++        // The dynamic-field key for the staking pool is the type name of
++        // StakingPool<StakingToken> (per the Move source line 173:
++        // `type_name::into_string(type_name::get<StakingPool<StakingToken>>())`),
++        // NOT the coinType string. We match the inner objectType which
++        // contains the coinType's hex address regardless of 0x-prefix
++        // encoding differences. Paginate in case the configId hosts >50
++        // staking pools.
++        const coinAddrLower = coinType.replace(/^0x/, '').toLowerCase()
++        let poolField: any = null
++        let cursor: any = null
++        for (let page = 0; page < 10 && !poolField && !cancelled; page++) {
++          const res = await suiClient.getDynamicFields({ parentId: configId, cursor, limit: 50 })
++          if (cancelled) return
++          poolField = res.data.find((f: any) => {
++            const objType: string = (f?.objectType ?? '').toLowerCase()
++            return objType.includes('::moonbags_stake::stakingpool<') && objType.includes(coinAddrLower)
++          })
++          if (poolField || !res.hasNextPage || !res.nextCursor) break
++          cursor = res.nextCursor
++        }
+         if (!poolField?.objectId) {
+           setStakedBalance(null)
+           return
+         }
+-        const accountFields = await suiClient.getDynamicFields({ parentId: poolField.objectId, limit: 50 })
+-        if (cancelled) return
+-        const accountField = accountFields.data.find((f: any) => f?.name?.value === address)
++        // The StakingAccount is added on the pool via
++        // `dynamic_object_field::add(&mut staking_pool.id, staker_address, ...)`
++        // with the address as the key. RPC returns address keys as hex
++        // strings — normalize both sides to handle 0x-prefix variation.
++        const myAddrLower = (address ?? '').replace(/^0x/, '').toLowerCase()
++        let accountField: any = null
++        let acctCursor: any = null
++        for (let page = 0; page < 10 && !accountField && !cancelled; page++) {
++          const res = await suiClient.getDynamicFields({ parentId: poolField.objectId, cursor: acctCursor, limit: 50 })
++          if (cancelled) return
++          accountField = res.data.find((f: any) => {
++            const v: string = String(f?.name?.value ?? '').replace(/^0x/, '').toLowerCase()
++            return v === myAddrLower
++          })
++          if (accountField || !res.hasNextPage || !res.nextCursor) break
++          acctCursor = res.nextCursor
++        }
+         if (!accountField?.objectId) {
+           setStakedBalance(0n)
+           return
+@@ -120,7 +141,7 @@
+         } else {
+           setStakedBalance(0n)
+         }
+-      } catch {
++      } catch (e) {
+         if (!cancelled) setStakedBalance(null)
+       }
+     })()
