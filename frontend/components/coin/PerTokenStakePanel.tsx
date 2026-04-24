@@ -5,6 +5,7 @@ import { useCurrentWallet, useSuiClient, useSignAndExecuteTransaction } from '@m
 import { Transaction } from '@mysten/sui/transactions'
 import { Loader2, Gift, TrendingUp, TrendingDown } from 'lucide-react'
 import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE, getPairType } from '@/lib/contracts_aida'
+import { getMoonbagsContractForPackage } from '@/lib/contracts'
 
 const SUI_CLOCK = '0x0000000000000000000000000000000000000000000000000000000000000006'
 
@@ -22,12 +23,31 @@ interface Props {
 // are typically modest — the bulk goes to AIDA stakers via the global
 // /staking page).
 //
-// This widget only renders meaningfully for AIDA-paired pools; SUI-paired
-// (v11/v12) pools use a different legacy staking config and aren't wired
-// up here yet.
+// Works for both AIDA-paired and SUI-paired pools. The SUI fork's
+// moonbags_stake module is structurally identical to the AIDA fork's —
+// same entry names, same signatures — just different reward coin (SUI
+// vs AIDA). At pool creation both forks call initialize_staking_pool<Token>
+// and initialize_creator_pool<Token>, so every pool launched under v11+
+// (SUI) or v8 (AIDA) has the per-token pool ready to accept stake().
+// Legacy v7 pools predate this and may abort on stake() — that's an
+// edge case we don't handle here; the user just sees the move-call error.
 export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId }: Props) {
   const pairType = getPairType(moonbagsPackageId)
   const isAidaPair = pairType === 'AIDA'
+
+  // Resolve the right moonbags bundle for the move-call target + stakeConfig.
+  // For AIDA, we always hit the current v8 package. For SUI, we route to the
+  // exact publish the pool was created under — the stakeConfig that owns its
+  // per-token staking pool lives on that publish, not on "latest SUI".
+  const pkgBundle = isAidaPair
+    ? MOONBAGS_AIDA_CONTRACT
+    : getMoonbagsContractForPackage(moonbagsPackageId)
+  const pkgId     = pkgBundle.packageId
+  const configId  = pkgBundle.stakeConfig
+  // Reward coin flows through on-chain from distribute_fees — AIDA on the
+  // AIDA fork, SUI on the SUI fork. Both are 9-decimal, so the conversion
+  // math below is the same.
+  const rewardSymbol = isAidaPair ? 'AIDA' : 'SUI'
 
   const { isConnected, currentWallet } = useCurrentWallet()
   const address = currentWallet?.accounts?.[0]?.address
@@ -36,14 +56,12 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
 
   const [walletBalance, setWalletBalance] = useState<bigint>(0n)
   const [stakedBalance, setStakedBalance] = useState<bigint | null>(null)
-  const [pendingRewardAida, setPendingRewardAida] = useState<bigint | null>(null)
+  const [pendingReward, setPendingReward] = useState<bigint | null>(null)
   const [stakeInput, setStakeInput] = useState('')
   const [unstakeInput, setUnstakeInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error'>('info')
-
-  const configId = MOONBAGS_AIDA_CONTRACT.stakeConfig
 
   // ── Query wallet balance of this token ───────────────────────────────────
   const refreshBalances = useCallback(async () => {
@@ -58,12 +76,13 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       setWalletBalance(0n)
     }
 
-    // Attempt to read the user's stake balance + pending rewards via devInspect.
-    // calculate_rewards_earned returns a u64; BCS-decoded as the u64 pending reward in AIDA mist.
+    // Attempt to read the user's pending rewards via devInspect.
+    // calculate_rewards_earned returns a u64 in reward-coin mist
+    // (AIDA mist for AIDA pairs, SUI mist for SUI pairs — both 9-decimal).
     try {
       const tx = new Transaction()
       tx.moveCall({
-        target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags_stake::calculate_rewards_earned`,
+        target: `${pkgId}::moonbags_stake::calculate_rewards_earned`,
         typeArguments: [coinType],
         arguments: [tx.object(configId)],
       })
@@ -77,13 +96,13 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         // BCS u64: little-endian 8 bytes
         let v = 0n
         for (let i = 0; i < bytes.length && i < 8; i++) v |= BigInt(bytes[i]) << BigInt(i * 8)
-        setPendingRewardAida(v)
+        setPendingReward(v)
       }
     } catch {
       // devInspect can fail if the stake pool doesn't exist or user hasn't staked
-      setPendingRewardAida(null)
+      setPendingReward(null)
     }
-  }, [address, coinType, suiClient, configId])
+  }, [address, coinType, suiClient, configId, pkgId])
 
   useEffect(() => { refreshBalances() }, [refreshBalances])
 
@@ -102,7 +121,8 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
   function fromMist(m: bigint): string {
     return (Number(m) / 10 ** TOKEN_DECIMALS).toLocaleString(undefined, { maximumFractionDigits: 4 })
   }
-  function fromAidaMist(m: bigint): string {
+  // Both AIDA and SUI are 9-decimal, so the same conversion works for either.
+  function fromRewardMist(m: bigint): string {
     return (Number(m) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 6 })
   }
 
@@ -132,7 +152,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       const [stakeCoin] = tx.splitCoins(base, [tx.pure.u64(mist)])
 
       tx.moveCall({
-        target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags_stake::stake`,
+        target: `${pkgId}::moonbags_stake::stake`,
         typeArguments: [coinType],
         arguments: [
           tx.object(configId),
@@ -164,7 +184,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     try {
       const tx = new Transaction()
       tx.moveCall({
-        target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags_stake::unstake`,
+        target: `${pkgId}::moonbags_stake::unstake`,
         typeArguments: [coinType],
         arguments: [
           tx.object(configId),
@@ -192,7 +212,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     try {
       const tx = new Transaction()
       tx.moveCall({
-        target: `${MOONBAGS_AIDA_CONTRACT.packageId}::moonbags_stake::claim_staking_pool`,
+        target: `${pkgId}::moonbags_stake::claim_staking_pool`,
         typeArguments: [coinType],
         arguments: [
           tx.object(configId),
@@ -210,20 +230,12 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     setLoading(false)
   }
 
-  if (!isAidaPair) {
-    return (
-      <div className="bg-[#0f0f17] border border-gray-800/60 rounded-2xl p-6">
-        <p className="text-gray-400 text-sm">Per-token staking is only available for AIDA-paired pools.</p>
-      </div>
-    )
-  }
-
   return (
     <div className="bg-[#0f0f17] border border-gray-800/60 rounded-2xl p-6 space-y-5">
       <div>
         <h2 className="text-xl font-bold text-white mb-1">Stake {symbol}</h2>
         <p className="text-xs text-gray-500">
-          Stake your {symbol} to earn a share of this token's trading fees (paid in AIDA).
+          Stake your {symbol} to earn a share of this token's trading fees (paid in {rewardSymbol}).
         </p>
       </div>
 
@@ -232,7 +244,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         <div className="bg-white/5 rounded-lg p-3 border border-white/5">
           <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Pending Rewards</div>
           <div className="text-sm font-bold text-[#D4AF37]">
-            {pendingRewardAida !== null ? `${fromAidaMist(pendingRewardAida)} AIDA` : '—'}
+            {pendingReward !== null ? `${fromRewardMist(pendingReward)} ${rewardSymbol}` : '—'}
           </div>
         </div>
         <div className="bg-white/5 rounded-lg p-3 border border-white/5">
@@ -294,7 +306,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-[#D4AF37]/20 to-[#FFD700]/20 border border-[#D4AF37]/40 text-[#D4AF37] font-bold text-sm hover:from-[#D4AF37]/30 hover:to-[#FFD700]/30 transition-colors disabled:opacity-50"
       >
         {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
-        Claim AIDA Rewards
+        Claim {rewardSymbol} Rewards
       </button>
 
       {/* Status */}
@@ -310,7 +322,8 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
 
       <p className="text-[10px] text-gray-600 text-center leading-relaxed">
         Fees are distributed once per day by the platform cron.
-        Meme-token stakers share ~0.01% of trade fees — the bulk (~30%) goes to AIDA stakers globally.
+        Meme-token stakers share ~0.01% of trade fees — the bulk (~30%) goes to AIDA stakers globally
+        (paid in {rewardSymbol} for this pool).
       </p>
     </div>
   )
