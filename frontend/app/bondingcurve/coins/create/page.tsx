@@ -874,47 +874,14 @@ function CreateTokenPageInner() {
             {/* Graduation DEX — now shown for both SUI and AIDA pairs.
                 SUI pair  → moonbags v13 Cetus auto-migration
                 AIDA pair → moonbags_aida v3 Cetus auto-migration (Coin<Token,AIDA>) */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-3">Graduates To</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setBondingDex(0)}
-                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition ${
-                    bondingDex === 0
-                      ? 'border-[#D4AF37]/60 bg-[#D4AF37]/10 ring-1 ring-[#D4AF37]/40'
-                      : 'border-gray-700 hover:border-gray-600 bg-white/[0.02]'
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                    bondingDex === 0 ? 'border-[#D4AF37] bg-[#D4AF37]' : 'border-gray-500'
-                  }`}>
-                    {bondingDex === 0 && <div className="w-2 h-2 rounded-full bg-white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-white font-medium">Cetus</div>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBondingDex(1)}
-                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition ${
-                    bondingDex === 1
-                      ? 'border-[#D4AF37]/60 bg-[#D4AF37]/10 ring-1 ring-[#D4AF37]/40'
-                      : 'border-gray-700 hover:border-gray-600 bg-white/[0.02]'
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                    bondingDex === 1 ? 'border-[#D4AF37] bg-[#D4AF37]' : 'border-gray-500'
-                  }`}>
-                    {bondingDex === 1 && <div className="w-2 h-2 rounded-full bg-white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-white font-medium">Turbos</div>
-                  </div>
-                </button>
-              </div>
-            </div>
+            {/* "Graduates To" radio removed. Every graduated pool ends up on
+                Cetus regardless of the creator's selection:
+                - bondingDex=0 (Cetus): on-chain path or cron creates Cetus pool.
+                - bondingDex=1 (Turbos): on-chain path admin-dumps; cron still
+                  auto-creates a Cetus pool for that dump. Turbos itself isn't
+                  a working destination yet (no init_turbos_pool shipped).
+                The bondingDex state stays at its default (0 = Cetus) so the
+                PTB arg is unchanged. */}
 
             {/* Target Raise */}
             <div>
