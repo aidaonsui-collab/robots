@@ -210,11 +210,27 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     if (!isFinite(v) || v <= 0) return 0n
     return BigInt(Math.floor(v * 10 ** tokenDecimals))
   }
+  // Full precision — used in inputs (MAX prefill) and exact-amount strings.
   function fromMist(m: bigint): string {
     return (Number(m) / 10 ** tokenDecimals).toLocaleString(undefined, { maximumFractionDigits: 4 })
   }
+  // Compact display — used in the summary tiles so 6-7 digit balances don't
+  // overflow the column on mobile. Hover shows the full amount via title.
+  function fromMistCompact(m: bigint): string {
+    const n = Number(m) / 10 ** tokenDecimals
+    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
+    if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(2)}M`
+    if (n >= 10_000)        return `${(n / 1_000).toFixed(2)}K`
+    return n.toLocaleString(undefined, { maximumFractionDigits: 4 })
+  }
   function fromRewardMist(m: bigint): string {
     return (Number(m) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 6 })
+  }
+  function fromRewardMistCompact(m: bigint): string {
+    const n = Number(m) / 1e9
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+    if (n >= 10_000)    return `${(n / 1_000).toFixed(2)}K`
+    return n.toLocaleString(undefined, { maximumFractionDigits: 4 })
   }
 
   // ── Stake ────────────────────────────────────────────────────────────────
@@ -325,6 +341,11 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
     setLoading(false)
   }
 
+  // Full-precision strings used for the title (hover) tooltips on tiles.
+  const walletFull  = `${fromMist(walletBalance)} ${symbol}`
+  const stakedFull  = stakedBalance !== null ? `${fromMist(stakedBalance)} ${symbol}` : '—'
+  const rewardsFull = pendingReward !== null ? `${fromRewardMist(pendingReward)} ${rewardSymbol}` : '—'
+
   return (
     <div className="bg-[#0f0f17] border border-gray-800/60 rounded-2xl p-6 space-y-5">
       <div>
@@ -334,22 +355,31 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
         </p>
       </div>
 
-      {/* Pending rewards + wallet + staked */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white/5 rounded-lg p-3 border border-white/5">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Pending Rewards</div>
-          <div className="text-sm font-bold text-[#D4AF37]">
-            {pendingReward !== null ? `${fromRewardMist(pendingReward)} ${rewardSymbol}` : '—'}
+      {/* Pending rewards + wallet + staked.
+          Compact format (1.09M SWORD) keeps 6-7 digit balances from
+          overflowing the column on mobile. Title attribute exposes the
+          full amount on hover (desktop) / long-press (mobile). */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="bg-white/5 rounded-lg p-3 border border-white/5 min-w-0">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Pending</div>
+          <div className="text-sm font-bold text-[#D4AF37] truncate" title={rewardsFull}>
+            {pendingReward !== null
+              ? <>{fromRewardMistCompact(pendingReward)} <span className="text-[10px] text-gray-500 font-medium">{rewardSymbol}</span></>
+              : '—'}
           </div>
         </div>
-        <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+        <div className="bg-white/5 rounded-lg p-3 border border-white/5 min-w-0">
           <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">In Wallet</div>
-          <div className="text-sm font-bold text-white">{fromMist(walletBalance)} {symbol}</div>
+          <div className="text-sm font-bold text-white truncate" title={walletFull}>
+            {fromMistCompact(walletBalance)} <span className="text-[10px] text-gray-500 font-medium">{symbol}</span>
+          </div>
         </div>
-        <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+        <div className="bg-white/5 rounded-lg p-3 border border-white/5 min-w-0">
           <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Staked</div>
-          <div className="text-sm font-bold text-white">
-            {stakedBalance !== null ? `${fromMist(stakedBalance)} ${symbol}` : '—'}
+          <div className="text-sm font-bold text-white truncate" title={stakedFull}>
+            {stakedBalance !== null
+              ? <>{fromMistCompact(stakedBalance)} <span className="text-[10px] text-gray-500 font-medium">{symbol}</span></>
+              : '—'}
           </div>
         </div>
       </div>
@@ -358,7 +388,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       <div>
         <label className="block text-xs text-gray-400 mb-1.5">Stake amount</label>
         <div className="flex gap-2">
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <input
               type="number"
               min="0"
@@ -381,7 +411,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
           <button
             onClick={handleStake}
             disabled={loading || !isConnected}
-            className="px-4 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-sm font-bold hover:bg-emerald-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            className="shrink-0 px-4 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-sm font-bold hover:bg-emerald-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
             Stake
@@ -393,7 +423,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
       <div>
         <label className="block text-xs text-gray-400 mb-1.5">Unstake amount</label>
         <div className="flex gap-2">
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <input
               type="number"
               min="0"
@@ -418,7 +448,7 @@ export default function PerTokenStakePanel({ coinType, symbol, moonbagsPackageId
           <button
             onClick={handleUnstake}
             disabled={loading || !isConnected}
-            className="px-4 py-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-sm font-bold hover:bg-red-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            className="shrink-0 px-4 py-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-sm font-bold hover:bg-red-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingDown className="w-4 h-4" />}
             Unstake
