@@ -21,7 +21,7 @@ import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 // via `setter_pool_creation_fee`. These fallbacks are used only while the
 // on-chain read is in flight or if it fails.
 const DEFAULT_FEE_SUI_MIST  = BigInt(5_000_000_000)           // 5 SUI
-const DEFAULT_FEE_AIDA_MIST = BigInt(100_000_000_000_000)     // 100,000 AIDA (prod default; matches on-chain setter target)
+const DEFAULT_FEE_AIDA_MIST = BigInt(75_000_000_000_000)     // 75,000 AIDA (prod default; matches on-chain setter target)
 type PairType = 'SUI' | 'AIDA';
 
 // Unified bonding-curve config: both SUI and AIDA forks use I = 100M, R = 400M
@@ -134,7 +134,7 @@ export default function CreateTokenPage() {
   // is MINIMUM_THRESHOLD = 1,000 AIDA (hardcoded in moonbags_aida.move);
   // prod UI floor is 20,000,000 AIDA so launches ship with meaningful
   // liquidity instead of a single whale snapping up 50%+ of supply.
-  const MIN_AIDA = 20_000_000
+  const MIN_AIDA = 75_000_000
 
   useEffect(() => {
     if (pairType === 'AIDA' && parseFloat(targetRaise) < MIN_AIDA) {
