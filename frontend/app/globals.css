@@ -159,17 +159,40 @@
   text-shadow: 0 0 12px rgba(34, 197, 94, 0.6);
 }
 
-/* Spotlight card animated gradient border */
-@keyframes borderRotate {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+/* Spotlight card animated gold border.
+   Conic gradient rotates around the card so the bright highlight
+   visibly travels the perimeter. The padding-trick in TokenCard.tsx
+   (1.5px outer padding, opaque inner) means this gradient only shows
+   as the 1.5px ring around the card. The brighter #FFF8DC midpoint
+   creates a moving "shine" that catches the eye without being noisy.
+   Same @property approach already used for `.graduated-border` so
+   browser support story is identical. */
+@property --spotlight-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
 }
-
+@keyframes spotlightSpin {
+  to { --spotlight-angle: 360deg; }
+}
 .spotlight-border-anim {
-  background: linear-gradient(135deg, #D4AF37, #FFD700, #B8860B, #8B6914, #D4AF37);
-  background-size: 300% 300%;
-  animation: borderRotate 4s ease infinite;
+  background: conic-gradient(
+    from var(--spotlight-angle),
+    #B8860B 0deg,
+    #D4AF37 60deg,
+    #FFD700 120deg,
+    #FFF8DC 180deg,
+    #FFD700 240deg,
+    #D4AF37 300deg,
+    #B8860B 360deg
+  );
+  animation: spotlightSpin 3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-border-anim {
+    animation: none;
+    background: linear-gradient(135deg, #D4AF37, #FFD700, #B8860B, #8B6914, #D4AF37);
+  }
 }
 
 /* Skeleton pulse */
