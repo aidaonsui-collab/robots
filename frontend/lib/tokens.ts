@@ -1,4 +1,5 @@
-import { ODYSSEY_CONTRACT, BACKEND_URL, MOONBAGS_CONTRACT_V12 } from './contracts'
+import { ODYSSEY_CONTRACT, BACKEND_URL } from './contracts'
+import { EVENT_SOURCE_PACKAGES } from './moonbags-packages'
 import { fetchAidaPriceUsd, getPairType, type PairToken } from './contracts_aida'
 import { TOKEN_CONFIG } from './token-config'
 import { kv } from '@vercel/kv'
@@ -114,36 +115,6 @@ export async function hasRealTokens(): Promise<boolean> {
   return count > 0
 }
 
-// Legacy origin of the Moonbags upgrade chain — events from any version in
-// the chain (v5..v10) show up under this package's event types.
-const ORIGIN_PACKAGE = '0x3c64691e02bcbb3e5ee685ffb2dd862156da0ed170628403b2753523f4f09ffd'
-
-// v11 package ID (moved to legacy in contracts.ts; keep here for event fan-out)
-const V11_PACKAGE = '0xc87ab979e0f729549aceddc0be30ec6b14b9b244d0f029006241af3ce2455813'
-// V12 has two live publishes:
-//   - 2026-04-16 (previous, no admin-settable fee)
-//   - 2026-04-21 (current, admin-settable fee via Configuration field)
-// Both still emit events because pools created under either publish
-// continue trading. MOONBAGS_CONTRACT_V12.packageId tracks the *current*
-// publish; the previous one is listed explicitly so its events still
-// fan out to the UI.
-const V12_PACKAGE         = MOONBAGS_CONTRACT_V12.packageId
-const V12_PACKAGE_PREV    = '0x95bb61b03a5d476c2621b2b3f512e8fd5f0976260ce4e8d0d9a79ca64b658f4e'
-
-// AIDA-paired fork. Same two-publish story as V12.
-const AIDA_PACKAGE        = '0x2156ceed0866b899840871add0efdae25799b2b22df1563922b5b01c011975a8'
-const AIDA_PACKAGE_CURRENT = '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313'
-
-// Packages to fan out event queries across (legacy chain + v11 + both v12
-// publishes + both AIDA-fork publishes).
-const EVENT_SOURCE_PACKAGES = [
-  ORIGIN_PACKAGE,
-  V11_PACKAGE,
-  V12_PACKAGE,
-  V12_PACKAGE_PREV,
-  AIDA_PACKAGE,
-  AIDA_PACKAGE_CURRENT,
-] as const
 
 export interface PoolToken {
   id: string                 // unique ID for card keys (same as poolId)
