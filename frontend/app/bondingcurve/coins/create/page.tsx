@@ -134,7 +134,7 @@ export default function CreateTokenPage() {
   // is MINIMUM_THRESHOLD = 1,000 AIDA (hardcoded in moonbags_aida.move);
   // prod UI floor is 20,000,000 AIDA so launches ship with meaningful
   // liquidity instead of a single whale snapping up 50%+ of supply.
-  const MIN_AIDA = 75_000_000
+  const MIN_AIDA = 20_000_000
 
   useEffect(() => {
     if (pairType === 'AIDA' && parseFloat(targetRaise) < MIN_AIDA) {
