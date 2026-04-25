@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server'
 
-export const dynamic = 'force-dynamic'
+// Edge-cache the all-tokens catalog for 30s. The handler fans out 12
+// suix_queryEvents calls + an sui_getObject per pool — without caching,
+// every homepage load hits this from each user's IP, which is both
+// slow (~3-5s response time) and rate-limit-exposed.
+//
+// 30s window is fine: brand-new tokens still appear within 30s of mint,
+// individual token pages stay live via /api/token/[slug] which has its
+// own cache.
+export const revalidate = 30
 
 const RPC = 'https://fullnode.mainnet.sui.io'
 
@@ -309,9 +317,16 @@ export async function GET() {
 
     const validTokens = tokens.filter((t): t is NonNullable<typeof t> => t !== null).filter(t => !HIDDEN_TOKENS.has(t.coinType))
 
-    return NextResponse.json(validTokens)
+    return NextResponse.json(validTokens, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
+      },
+    })
   } catch (error: any) {
     console.error('Error fetching tokens:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+    )
   }
 }
