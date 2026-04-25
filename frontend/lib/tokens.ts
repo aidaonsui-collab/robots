@@ -546,7 +546,7 @@ export async function fetchAllPoolTokens(): Promise<PoolToken[]> {
           method: 'suix_queryEvents',
           params: [
             { MoveEventType: `${pkg}::moonbags::CreatedEventV2` },
-            null, 50, true
+            null, 200, true
           ]
         })
       }).then(r => r.json()).catch(() => ({ result: { data: [] } })),
