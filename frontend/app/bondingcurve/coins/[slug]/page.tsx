@@ -35,7 +35,8 @@ import TradingViewChart from '@/components/coin/TradingViewChart'
 import BubbleMap from '@/components/coin/BubbleMap'
 import { VideoEmbed } from '@/components/VideoEmbed'
 import { formatNumber, formatSui } from '@/lib/utils'
-import { fetchPoolToken, fetchPoolTrades, fetchSuiNSName, PoolToken, TradeEvent } from '@/lib/tokens'
+import { fetchSuiNSName, PoolToken, TradeEvent } from '@/lib/tokens'
+import { fetchPoolToken, fetchPoolTrades } from '@/lib/tokens-client'
 
 // ============================================
 // HELPERS
