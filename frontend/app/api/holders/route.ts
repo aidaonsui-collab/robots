@@ -80,7 +80,6 @@ async function getCirculatingFromPool(poolId: string, coinType: string): Promise
     })
     const j = await res.json()
     const total = BigInt(j.result?.value ?? '0')
-    console.log(`[holders] suix_getTotalSupply=${total}`)
     return total > 0n ? total : null
   } catch (e) {
     console.warn('[holders] getTotalSupply failed:', e)
@@ -117,7 +116,6 @@ export async function GET(req: NextRequest) {
       const raw: any[] = data?.content ?? data?.data ?? data?.holders ?? []
       if (raw.length > 0) {
         const suiscanTotal = data?.totalElements ?? data?.total ?? data?.totalCount ?? null
-        console.log(`[holders] Suiscan found ${raw.length} holders, total=${suiscanTotal}`)
 
         const holders = raw.slice(0, 10).map((h: any, i: number) => {
           const amountVal = h.amount ?? h.balance ?? 0
@@ -147,7 +145,6 @@ export async function GET(req: NextRequest) {
           holders,
         })
       }
-      console.log(`[holders] Suiscan returned empty for ${coinType}`)
     }
   } catch (e) {
     console.error('[holders] Suiscan error:', e)
@@ -155,13 +152,11 @@ export async function GET(req: NextRequest) {
 
   // ── 2. On-chain via fetchPoolTrades + coin balance lookup ─────────────────
   if (!poolId) {
-    console.log('[holders] No poolId, cannot do on-chain fallback')
     return NextResponse.json({ holders: [] })
   }
 
   try {
     const trades = await fetchPoolTrades(poolId)
-    console.log(`[holders] fetchPoolTrades returned ${trades.length} trades`)
 
     const addresses = new Set<string>()
     // Always include the dead/burn wallet — it receives tokens but never trades
@@ -170,8 +165,6 @@ export async function GET(req: NextRequest) {
     for (const trade of trades) {
       if (trade.user) addresses.add(trade.user.toLowerCase())
     }
-
-    console.log(`[holders] ${addresses.size} unique addresses`)
 
     if (addresses.size === 0) {
       return NextResponse.json({ holders: [], error: 'No trade events found for pool' })
@@ -189,8 +182,6 @@ export async function GET(req: NextRequest) {
     const nonZero = balances
       .filter(b => b.balance > 0n)
       .sort((a, b) => (b.balance > a.balance ? 1 : b.balance < a.balance ? -1 : 0))
-
-    console.log(`[holders] ${nonZero.length} non-zero balances`)
 
     if (nonZero.length === 0) {
       return NextResponse.json({ holders: [], error: 'All balances are zero' })
