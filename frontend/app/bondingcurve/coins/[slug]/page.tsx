@@ -1697,7 +1697,7 @@ export default function CoinPage() {
     return () => { cancelled = true }
   }, [slug, refetchCount])
 
-  // Background poll: refetch trades every 5s while the tab is visible so
+  // Background poll: refetch trades every 10s while the tab is visible so
   // other wallets' trades surface without a manual page refresh. Pauses
   // when the tab is hidden to save RPC budget.
   useEffect(() => {
@@ -1706,7 +1706,7 @@ export default function CoinPage() {
       if (typeof document !== 'undefined' && document.hidden) return
       setRefetchCount(c => c + 1)
     }
-    const iv = setInterval(tick, 5_000)
+    const iv = setInterval(tick, 10_000)
     return () => clearInterval(iv)
   }, [slug])
 
@@ -1775,7 +1775,7 @@ export default function CoinPage() {
   // usable. Show a proper error card + manual retry button instead of
   // the old MOCK_TOKEN fallback, which was easy to mistake for a
   // half-loaded real page (users thought "refresh to fix" was the
-  // remedy). Background poll also keeps trying every 5s, so this
+  // remedy). Background poll also keeps trying every 10s, so this
   // usually resolves itself.
   if (loadFailed && !poolData) {
     return (
