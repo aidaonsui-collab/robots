@@ -323,7 +323,7 @@ export async function GET() {
           pairToken,
         }
       })
-    )
+
 
     const validTokens = tokens.filter((t): t is NonNullable<typeof t> => t !== null).filter(t => !HIDDEN_TOKENS.has(t.coinType))
 
