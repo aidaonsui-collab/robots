@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchPoolTrades } from '@/lib/tokens'
+import { mapWithConcurrency } from '@/lib/concurrency'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,13 @@ export interface Holder {
 
 const RPC = 'https://fullnode.mainnet.sui.io'
 const DECIMALS = 6
+
+// Cap the per-address balance fan-out. A popular token can have hundreds
+// of unique trader addresses; firing all `suix_getCoins` calls in
+// parallel spikes function memory hard. 8 is plenty — Sui RPC isn't
+// faster at 200 concurrent than 8, and we still finish well within the
+// fetch timeout.
+const BALANCE_FANOUT_CONCURRENCY = 8
 
 async function getCoinBalance(address: string, coinType: string): Promise<bigint> {
   try {
@@ -171,12 +179,20 @@ export async function GET(req: NextRequest) {
     }
 
     const userAddresses = [...addresses].filter(a => a.startsWith('0x') && a.length >= 42)
-    const balances = await Promise.all(
-      userAddresses.map(async addr => ({
+    // Cap parallel balance lookups at 8 in flight. Was unbounded
+    // Promise.all(map) — for a popular token with hundreds of trader
+    // addresses that meant hundreds of concurrent suix_getCoins fetches,
+    // spiking the function's memory peak. Sui RPC isn't faster at
+    // 200 parallel than at 8, so this is pure memory savings with no
+    // throughput cost.
+    const balances = await mapWithConcurrency(
+      userAddresses,
+      BALANCE_FANOUT_CONCURRENCY,
+      async addr => ({
         address: addr,
         balance: await getCoinBalance(addr, coinType),
         isDev: addr === creatorAddress,
-      }))
+      }),
     )
 
     const nonZero = balances

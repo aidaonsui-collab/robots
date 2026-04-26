@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from '@/lib/concurrency'
 import { NextResponse } from 'next/server'
 
 // Edge-cache the all-tokens catalog for 30s. The handler fans out 12
@@ -27,6 +28,12 @@ const ORIGIN_PACKAGE_AIDA_CURRENT = '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e
 // zeroes out remain_token_reserves on transfer_pool, so we can't read it from
 // the pool object after graduation. Standard Odyssey launch supply is 1B.
 const POST_GRAD_SUPPLY = 1_000_000_000
+
+// Cap pool-object fetch fan-out at 8 concurrent. Was unbounded
+// Promise.all over hundreds of events — each spawned a sui_getObject
+// fetch in parallel, spiking function memory. Sui RPC is not faster at
+// 200 parallel than at 8, so this is pure memory savings.
+const POOL_FETCH_CONCURRENCY = 8
 
 // Denylist — hide test/unwanted tokens. New tokens appear automatically unless added here.
 const HIDDEN_TOKENS = new Set([
@@ -220,8 +227,10 @@ export async function GET() {
       pkgId === ORIGIN_PACKAGE_AIDA || pkgId === ORIGIN_PACKAGE_AIDA_CURRENT
 
     // Process each event into a token
-    const tokens = await Promise.all(
-      events.map(async (e: any) => {
+    const tokens = await mapWithConcurrency(
+      events,
+      POOL_FETCH_CONCURRENCY,
+      async (e: any) => {
         const meta = e.parsedJson
         const poolId = meta.pool_id
 
@@ -312,7 +321,7 @@ export async function GET() {
           pairType: pairToken,
           pairToken,
         }
-      })
+      },)
     )
 
     const validTokens = tokens.filter((t): t is NonNullable<typeof t> => t !== null).filter(t => !HIDDEN_TOKENS.has(t.coinType))
