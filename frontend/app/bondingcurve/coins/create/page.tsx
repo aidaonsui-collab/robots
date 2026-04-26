@@ -21,7 +21,7 @@ import { MOONBAGS_AIDA_CONTRACT, AIDA_COIN_TYPE } from '@/lib/contracts_aida'
 // via `setter_pool_creation_fee`. These fallbacks are used only while the
 // on-chain read is in flight or if it fails.
 const DEFAULT_FEE_SUI_MIST  = BigInt(5_000_000_000)           // 5 SUI
-const DEFAULT_FEE_AIDA_MIST = BigInt(20_000_000_000_000)     // 20,000 AIDA (prod default; matches on-chain setter target)
+const DEFAULT_FEE_AIDA_MIST = BigInt(75_000_000_000_000)     // 75,000 AIDA (prod default; matches on-chain setter target)
 type PairType = 'SUI' | 'AIDA';
 
 // Unified bonding-curve config: both SUI and AIDA forks use I = 100M, R = 400M
