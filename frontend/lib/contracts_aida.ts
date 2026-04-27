@@ -43,7 +43,7 @@ export const MOONBAGS_AIDA_CONTRACT_V2: MoonbagsContract = {
   // upgrade to 0x7555b1da… accidentally built from stale source and did
   // not include the new function, so a second upgrade was required).
   // Shared objects below are untouched by the upgrade.
-  packageId:     '0xcee80ee8d9b4d56054c07fe90f8ab05a8a61e58f6762a6133a4eb474db20915b',
+  packageId:     '0xc8e2fc68d40dc9df864c4d086a05c21cb46c9be740ac406228330b324fb617cc',
   module:        'moonbags',
   configuration: '0x1b08a4a16024a7456e3c42449daec1dc8cbe130e24d6a6c37482e4fd2293b60f',
   stakeConfig:   '0xd2da7956c16dafe9e592b04085d80b19159c39034e222247315a51b9c3770c09',
@@ -118,7 +118,7 @@ export const AIDA_PAIR_PACKAGE_IDS: readonly string[] = [
   '0x593a2e87f393dcb14e0f8c88d587c04e9bc98295e13212e8992343377bf7f313', // 2026-04-21 republish (v2 original-id; still appears in type strings)
   '0x7555b1da30fa1e0d355d18a129b2aafc92c6c9a4529e4d64ff90a2d5e692240f', // 2026-04-23 upgrade of v2 (version 2; built from stale source, no init_cetus_aida_pool)
   '0x14e35bc96f5739c82e10336700d37716eb5da0d69520a3dc3bdba8385f163629', // 2026-04-23 re-upgrade of v2 (version 4, broken init_cetus_aida_pool sig)
-  '0xcee80ee8d9b4d56054c07fe90f8ab05a8a61e58f6762a6133a4eb474db20915b', // 2026-04-23 re-upgrade of v2 (version 5, adds init_cetus_aida_pool_v2)
+  '0xc8e2fc68d40dc9df864c4d086a05c21cb46c9be740ac406228330b324fb617cc', // 2026-04-23 re-upgrade of v2 (version 5, adds init_cetus_aida_pool_v2)
   '0x69079609ad446344ec8114b9466e04e9210daae60c9289e72037bc5e8cd54a3c', // 2026-04-23 fresh v3 (superseded by v2 upgrade above, left for legacy pools)
 ] as const
 

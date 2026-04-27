@@ -1290,6 +1290,24 @@ module moonbags_aida::moonbags {
     // Shared body — both entries above flow through here. Splitting the
     // logic out keeps the v1/v2 entries identical apart from how they
     // obtain the &mut Pool reference.
+    //
+    // V9 coin-order fix (2026-04-27): v8 hardcoded
+    // `pool_creator::create_pool_v2<Token, AIDA>`, but Cetus's
+    // `factory::new_pool_key` (factory.move:7) requires
+    // `CoinTypeA > CoinTypeB` in canonical-type-name string order, else
+    // aborts with code 6. That means v8 only worked for tokens whose
+    // type-name string sorts ABOVE AIDA's. ~half the address space sorts
+    // below — e.g. AXBT (`0x03e9…`) < AIDA (`0xcee2…`) — and those
+    // tokens silently failed to migrate after graduation. v9 dispatches
+    // on the comparison so both halves migrate cleanly.
+    //
+    // Both branches:
+    //   - mint full-range Cetus liquidity at tick_spacing=200,
+    //   - fix the Token side as the exact amount (AIDA rebalances and
+    //     refunds residuals — preserves v8's deterministic price),
+    //   - burn the LP via lp_burn::burn_lp_v2,
+    //   - record burn_proof on the bonding pool so the cron's
+    //     idempotency check (BURN_PROOF_FIELD lookup) keeps working.
     fun init_cetus_aida_pool_inner<Token>(
         admin: address,
         pool: &mut Pool<Token>,
@@ -1314,31 +1332,88 @@ module moonbags_aida::moonbags {
             string::utf8(b"")
         };
 
-        // Sui's Cetus expects Q64.64 sqrt price. 340282366920938463463374607431768211456 = 2^128.
-        let (position, coin_token_refund, coin_aida_refund) = pool_creator::create_pool_v2<Token, AIDA>(
-            cetus_config,
-            cetus_pools,
-            200, // tick spacing — Cetus standard
-            sqrt(340282366920938463463374607431768211456 * aida_amount / token_amount),
-            icon_url,
-            4294523696, // lower tick (full-range for tick_spacing=200)
-            443600,     // upper tick
-            coin_token,
-            coin_aida,
-            metadata_token,
-            metadata_aida,
-            true, // fix_amount_a: use token_amount as exact, AIDA side adjusts
-            clock,
-            ctx
-        );
+        // Sui's Cetus expects a Q64.64 sqrt price.
+        // 340282366920938463463374607431768211456 = 2^128.
+        // - Token>AIDA branch: A=Token, B=AIDA, price = AIDA/Token,
+        //   so sqrt_price = sqrt(2^128 * aida/token).
+        // - Token<AIDA branch: A=AIDA, B=Token, price = Token/AIDA,
+        //   so sqrt_price = sqrt(2^128 * token/aida) — numerator and
+        //   denominator invert when the pair flips.
+        let burn_proof = if (token_gt_aida<Token>()) {
+            let (position, coin_token_refund, coin_aida_refund) = pool_creator::create_pool_v2<Token, AIDA>(
+                cetus_config,
+                cetus_pools,
+                200, // tick spacing — Cetus standard
+                sqrt(340282366920938463463374607431768211456 * aida_amount / token_amount),
+                icon_url,
+                4294523696, // lower tick (full-range for tick_spacing=200; -443600 in i32)
+                443600,     // upper tick
+                coin_token,
+                coin_aida,
+                metadata_token,
+                metadata_aida,
+                true, // fix_amount_a: token side (=A) is exact, AIDA adjusts
+                clock,
+                ctx
+            );
+            transfer::public_transfer<Coin<Token>>(coin_token_refund, admin);
+            transfer::public_transfer<Coin<AIDA>>(coin_aida_refund, admin);
+            lp_burn::burn_lp_v2(cetus_burn_manager, position, ctx)
+        } else {
+            // Swapped pair. Token is now coin B, so fix_amount_a flips
+            // to false (we still want the token side exact, just under
+            // its new B-naming).
+            let (position, coin_aida_refund, coin_token_refund) = pool_creator::create_pool_v2<AIDA, Token>(
+                cetus_config,
+                cetus_pools,
+                200,
+                sqrt(340282366920938463463374607431768211456 * token_amount / aida_amount),
+                icon_url,
+                4294523696,
+                443600,
+                coin_aida,
+                coin_token,
+                metadata_aida,
+                metadata_token,
+                false, // fix_amount_a=false ≡ token side (=B) is exact
+                clock,
+                ctx
+            );
+            transfer::public_transfer<Coin<Token>>(coin_token_refund, admin);
+            transfer::public_transfer<Coin<AIDA>>(coin_aida_refund, admin);
+            lp_burn::burn_lp_v2(cetus_burn_manager, position, ctx)
+        };
 
-        let burn_proof = lp_burn::burn_lp_v2(cetus_burn_manager, position, ctx);
         dynamic_object_field::add(&mut pool.id, BURN_PROOF_FIELD, burn_proof);
+    }
 
-        // Any residual coins returned from Cetus (rounding dust or single-sided
-        // liquidity on an off-peg first buy) go back to the admin.
-        transfer::public_transfer<Coin<Token>>(coin_token_refund, admin);
-        transfer::public_transfer<Coin<AIDA>>(coin_aida_refund, admin);
+    // Cetus rule (factory.move:7): "the CoinTypeA must be the bigger
+    // one (string order)". `type_name::into_string` returns the same
+    // canonical form Cetus uses for its TypeName comparison —
+    // `<addr_no_0x_prefix>::<module>::<struct>`, all ASCII — so a
+    // byte-by-byte lex comparison matches Cetus's check exactly.
+    //
+    // Returns true ⇔ `<Token, AIDA>` is the order Cetus accepts (i.e.
+    // Token is the lex-bigger type). When false, init_cetus_aida_pool_inner
+    // dispatches to `<AIDA, Token>` instead.
+    fun token_gt_aida<Token>(): bool {
+        let token_bytes = ascii::into_bytes(type_name::into_string(type_name::get<Token>()));
+        let aida_bytes  = ascii::into_bytes(type_name::into_string(type_name::get<AIDA>()));
+        let token_len = vector::length(&token_bytes);
+        let aida_len  = vector::length(&aida_bytes);
+        let min_len = min(token_len, aida_len);
+        let mut i = 0;
+        while (i < min_len) {
+            let a = *vector::borrow(&token_bytes, i);
+            let b = *vector::borrow(&aida_bytes, i);
+            if (a > b) return true;
+            if (a < b) return false;
+            i = i + 1;
+        };
+        // All bytes equal up to min_len → longer string is greater.
+        // Equal type names should be impossible here (Token ≠ AIDA by
+        // construction; bonding curve enforces this elsewhere).
+        token_len > aida_len
     }
 
     // Integer square root (u256 → u128), Newton's method. Copied from the
