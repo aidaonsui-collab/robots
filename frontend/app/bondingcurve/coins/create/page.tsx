@@ -447,9 +447,13 @@ export default function CreateTokenPage() {
       const expectedTokensOut: bigint = configSuiMist > 0n
         ? (curve.poolVirtualToken * configSuiMist) / (virtualSuiStart + configSuiMist)
         : 1n
-      // Try: take 99% of expected — under-buy, accept whatever the curve gives
+      // Was: (expectedTokensOut * 99n) / 100n
+      // Try: 95% — leaves room for the on-chain 1% trading fee deducted from
+      // firstBuy AND any AMM-curve rounding mismatch. Buyer still receives
+      // whatever the curve actually produces (typically ~99% of expected),
+      // but the floor is loose enough that no realistic curve config aborts.
       const amountOut: bigint = expectedTokensOut > 100n
-        ? (expectedTokensOut * 99n) / 100n
+        ? (expectedTokensOut * 95n) / 100n
         : expectedTokensOut
 
       if (!metaObjId) throw new Error('CoinMetadata object ID missing — please retry TX1')
