@@ -108,12 +108,12 @@ module odyssey_founder_nft::founder_nft {
         display::add(
             &mut display,
             string::utf8(b"name"),
-            string::utf8(b"Odyssey Founder \u{2014} {agent_name}"),
+            string::utf8(b"Odyssey Founder NFT"),
         );
         display::add(
             &mut display,
             string::utf8(b"description"),
-            string::utf8(b"Commemorative NFT marking the original creator of the {agent_symbol} agent on Odyssey. Holders will be eligible for airdrops."),
+            string::utf8(b"Commemorative NFT for the creator of an agent on Odyssey. Holders eligible for airdrops."),
         );
         display::add(
             &mut display,
