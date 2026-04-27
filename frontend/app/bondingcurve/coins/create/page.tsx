@@ -447,10 +447,10 @@ export default function CreateTokenPage() {
       const expectedTokensOut: bigint = configSuiMist > 0n
         ? (curve.poolVirtualToken * configSuiMist) / (virtualSuiStart + configSuiMist)
         : 1n
-      // Subtract 1 to absorb any rounding mismatch between JS bigint math
-      // and the on-chain u128 curve math. A 1-unit-over `amount_out`
-      // would abort with EInsufficientInput.
-      const amountOut: bigint = expectedTokensOut > 1n ? expectedTokensOut - 1n : expectedTokensOut
+      // Try: take 99% of expected — under-buy, accept whatever the curve gives
+      const amountOut: bigint = expectedTokensOut > 100n
+        ? (expectedTokensOut * 99n) / 100n
+        : expectedTokensOut
 
       if (!metaObjId) throw new Error('CoinMetadata object ID missing — please retry TX1')
       if (!capObjId)  throw new Error('TreasuryCap object ID missing — please retry TX1')
