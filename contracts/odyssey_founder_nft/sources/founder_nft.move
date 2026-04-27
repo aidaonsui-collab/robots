@@ -1,19 +1,19 @@
 // ============================================================
-// Odyssey Founder NFT — one NFT per agent that owns the creator
-// fee stream for that agent's bonding curve.
+// Odyssey Founder NFT — commemorative NFT marking original
+// agent creators on Odyssey.
 //
-// Design decisions (see chat log for full rationale):
+// Design decisions:
 //   - Single shared Move type (OdysseyFounderNFT). Every agent's
 //     Founder NFT is an instance of this one type, so TradePort
 //     only needs to index one collection.
 //   - AdminCap-gated mint. Only Odyssey (holder of AdminCap)
 //     can mint. Prevents squatting the collection.
-//   - No on-chain fee logic here. The fungible bonding-curve
-//     token stays the trading primitive; the `distribute-fees`
-//     cron reads Founder NFT ownership off-chain and routes the
-//     "creator" share of trading fees to whoever currently holds
-//     the NFT. This avoids needing to upgrade the bonding curve
-//     package just to add NFT-aware fee routing.
+//   - Off-chain airdrop model. The NFT does NOT route on-chain
+//     trading fees automatically. Holders are eligible for
+//     periodic airdrops run by the Odyssey team at their
+//     discretion. Keeping airdrops off-chain leaves flexibility
+//     to tune amounts/timing without upgrading the bonding-curve
+//     package or making fee-stream commitments on-chain.
 //   - Royalty enforcement via Sui's TransferPolicy + Kiosk rule
 //     module. Royalty bps is a field on the policy, settable by
 //     the cap holder post-publish, so we can tune it without a
@@ -113,7 +113,7 @@ module odyssey_founder_nft::founder_nft {
         display::add(
             &mut display,
             string::utf8(b"description"),
-            string::utf8(b"Owns the creator fee stream for {agent_symbol} on Odyssey. Holder earns 30% of all bonding-curve trading fees for this agent's token, routed automatically by the Odyssey fee cron."),
+            string::utf8(b"Commemorative NFT marking the original creator of the {agent_symbol} agent on Odyssey. Holders will be eligible for airdrops."),
         );
         display::add(
             &mut display,
