@@ -83,17 +83,45 @@ export default function CreateAgentPage() {
 
   const currentStepIndex = steps.findIndex(s => s.id === step)
   const avatarFileRef = useRef<HTMLInputElement>(null)
+  // Local data: URL kept only for preview while the Cloudinary upload is in
+  // flight. form.imageUrl always holds a real https/ipfs URL — never a data:
+  // URL — so it's safe to put on chain at mint time.
+  const [imagePreview, setImagePreview] = useState('')
+  const [imageUploading, setImageUploading] = useState(false)
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) return
+
+    // Instant preview from a data: URL — UI only, never persisted.
     const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
-      setForm(prev => ({ ...prev, imageUrl: dataUrl }))
-    }
+    reader.onload = () => setImagePreview(reader.result as string)
     reader.readAsDataURL(file)
+
+    // Upload to Cloudinary so the URL stored in form.imageUrl is a real
+    // https URL. Same upload preset/folder as /bondingcurve/coins/create.
+    setImageUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('upload_preset', 'launchpad')
+      fd.append('folder', 'launchpad')
+      const res = await fetch('https://api.cloudinary.com/v1_1/dtgdfntom/image/upload', {
+        method: 'POST',
+        body: fd,
+      })
+      if (!res.ok) throw new Error(`Cloudinary upload failed: ${res.status}`)
+      const data = await res.json()
+      if (!data.secure_url) throw new Error('Cloudinary response missing secure_url')
+      setForm(prev => ({ ...prev, imageUrl: data.secure_url }))
+    } catch (err) {
+      console.error('[agent-create] avatar upload failed:', err)
+      alert('Avatar upload failed. Please try a different image or paste a URL directly.')
+      setImagePreview('')
+    } finally {
+      setImageUploading(false)
+    }
   }
 
   const handleNext = () => {
@@ -113,6 +141,10 @@ export default function CreateAgentPage() {
   const handleSubmit = async () => {
     if (!currentWallet || !address) {
       alert('Please connect your wallet first')
+      return
+    }
+    if (imageUploading) {
+      alert('Avatar is still uploading — please wait a moment.')
       return
     }
 
@@ -277,11 +309,14 @@ export default function CreateAgentPage() {
                     <div className="flex gap-3">
                       <input
                         type="text"
-                        value={form.imageUrl.startsWith('data:') ? '(uploaded file)' : form.imageUrl}
-                        onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-                        placeholder="https://... or ipfs://..."
+                        value={form.imageUrl}
+                        onChange={(e) => {
+                          setForm({ ...form, imageUrl: e.target.value })
+                          setImagePreview('')
+                        }}
+                        placeholder={imageUploading ? 'Uploading…' : 'https://… or ipfs://…'}
                         className="flex-1 px-4 py-3 bg-slate-800 border border-white/10 rounded-xl text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50"
-                        readOnly={form.imageUrl.startsWith('data:')}
+                        readOnly={imageUploading}
                       />
                       <input
                         ref={avatarFileRef}
@@ -292,14 +327,16 @@ export default function CreateAgentPage() {
                       />
                       <button
                         onClick={() => avatarFileRef.current?.click()}
-                        className="px-4 py-3 bg-slate-800 border border-white/10 rounded-xl text-gray-400 hover:text-white hover:bg-slate-700 transition-colors"
+                        disabled={imageUploading}
+                        className="px-4 py-3 bg-slate-800 border border-white/10 rounded-xl text-gray-400 hover:text-white hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Upload className="w-5 h-5" />
                       </button>
                     </div>
-                    {form.imageUrl && (
-                      <div className="mt-3">
-                        <img src={form.imageUrl} alt="Preview" className="w-24 h-24 rounded-xl object-cover border border-white/10" />
+                    {(imagePreview || form.imageUrl) && (
+                      <div className="mt-3 flex items-center gap-3">
+                        <img src={imagePreview || form.imageUrl} alt="Preview" className="w-24 h-24 rounded-xl object-cover border border-white/10" />
+                        {imageUploading && <span className="text-xs text-gray-400">Uploading to CDN…</span>}
                       </div>
                     )}
                   </div>
