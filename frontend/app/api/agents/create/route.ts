@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAgent, updateAgent } from '@/lib/agents-db'
 import { ensureAgentWallet } from '@/lib/agent-wallet'
+import { mintFounderNft } from '@/lib/founder-nft'
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,6 +66,32 @@ export async function POST(request: NextRequest) {
       console.warn('[agent-create] Wallet generation skipped (AGENT_WALLET_MASTER_KEY not set?):', e)
     }
 
+    // Mint the Odyssey Founder NFT to the human creator. This is the
+    // exclusivity mechanism: regular bonding-curve token launches via
+    // /bondingcurve/coins/create never call this — only the agent
+    // creation path does. Best-effort; agent creation succeeds even
+    // if the mint fails (env vars not yet set, RPC blip, etc.) and
+    // the NFT can be minted later by re-running with the right
+    // metadata.
+    if (agent.agentAddress) {
+      try {
+        const nftId = await mintFounderNft({
+          recipient: creatorAddress,
+          agentId: agent.agentAddress,
+          poolId,
+          agentName: name,
+          agentSymbol: symbol,
+          imageUrl: avatarUrl || '',
+        })
+        if (nftId) {
+          await updateAgent(agent.id, { founderNftId: nftId })
+          agent.founderNftId = nftId
+        }
+      } catch (e) {
+        console.warn('[agent-create] Founder NFT mint failed (non-fatal):', e)
+      }
+    }
+
     // TODO: Spawn OpenClaw session
     // const sessionId = await spawnOpenClawSession(agent)
     // await updateAgent(agent.id, { openclawSessionId: sessionId, status: 'active' })
@@ -79,6 +106,7 @@ export async function POST(request: NextRequest) {
         symbol: agent.symbol,
         status: agent.status,
         agentAddress: agent.agentAddress,
+        founderNftId: agent.founderNftId,
       }
     }, { status: 201 })
   } catch (error: any) {
