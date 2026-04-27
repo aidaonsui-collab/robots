@@ -69,9 +69,28 @@ export async function mintFounderNft(params: MintFounderNftParams): Promise<stri
     return null
   }
 
-  // Truncate image URL defensively. Sui object size is generous but
-  // an arbitrary user-supplied URL has no real upper bound.
-  const imageUrl = (params.imageUrl ?? '').slice(0, 1000)
+  // Sanitize image URL before it goes on chain.
+  // - Reject `data:` URLs: they're typically 50KB+ base64 from a file
+  //   upload, get truncated below to garbage that no marketplace can
+  //   render. Caller (the /agents/create form) is expected to upload
+  //   to a CDN first and pass the resulting https URL.
+  // - Only accept http(s)://, ipfs://, or ar:// (Arweave). Anything
+  //   else is logged and dropped — better an empty `image_url` field
+  //   on the NFT than a broken one we can't fix without a re-mint.
+  // - Truncate to 500 chars defensively. Real CDN/IPFS URLs are well
+  //   under this; the cap just prevents pathological inputs.
+  const rawImageUrl = (params.imageUrl ?? '').trim()
+  let imageUrl = ''
+  if (rawImageUrl) {
+    if (/^(https?|ipfs|ar):\/\//i.test(rawImageUrl)) {
+      imageUrl = rawImageUrl.slice(0, 500)
+    } else {
+      console.warn('[founder-nft] dropping non-CDN image_url before mint', {
+        prefix: rawImageUrl.slice(0, 32),
+        length: rawImageUrl.length,
+      })
+    }
+  }
 
   try {
     const client = new SuiClient({ url: SUI_RPC })
