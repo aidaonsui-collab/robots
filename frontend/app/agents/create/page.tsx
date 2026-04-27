@@ -7,6 +7,18 @@ import { ArrowLeft, Upload, Sparkles, Brain, Zap, DollarSign, Settings, Code, Al
 import { motion } from 'framer-motion'
 
 type Step = 'basics' | 'personality' | 'economics' | 'review'
+type PairType = 'SUI' | 'AIDA'
+
+// Per-pair launch defaults. Match the floors enforced on
+// /bondingcurve/coins/create (MIN_AIDA = 20_000_000 for AIDA pairs;
+// SUI pairs use the curve's hardcoded 1000-AIDA floor as the minimum
+// graduation threshold). Toggling pair flips the form to these
+// defaults — preserving the user's input across pairs is misleading
+// (50 SUI ≈ $50 vs 50 AIDA ≈ pennies).
+const PAIR_DEFAULTS: Record<PairType, { initialBuy: number; targetRaise: number; targetRaiseMin: number }> = {
+  SUI:  { initialBuy: 50,    targetRaise: 2_000,       targetRaiseMin: 1_000 },
+  AIDA: { initialBuy: 5_000, targetRaise: 20_000_000,  targetRaiseMin: 20_000_000 },
+}
 
 interface AgentForm {
   // Basics
@@ -17,15 +29,16 @@ interface AgentForm {
   twitter: string
   telegram: string
   website: string
-  
+
   // Personality
   personality: string
   skills: string[]
   model: 'minimax' | 'claude' | 'gpt4'
-  
+
   // Economics
-  initialBuy: number // SUI
-  targetRaise: number // SUI
+  pairType: PairType   // SUI = SUI-paired bonding curve; AIDA = AIDA-paired
+  initialBuy: number   // denominated in pairType
+  targetRaise: number  // denominated in pairType
   revenueShare: {
     stakers: number // %
     creator: number // %
@@ -65,8 +78,9 @@ export default function CreateAgentPage() {
     personality: '',
     skills: [],
     model: 'minimax',
-    initialBuy: 50,
-    targetRaise: 2000,
+    pairType: 'SUI',
+    initialBuy: PAIR_DEFAULTS.SUI.initialBuy,
+    targetRaise: PAIR_DEFAULTS.SUI.targetRaise,
     revenueShare: {
       stakers: 30,
       creator: 40,
@@ -124,6 +138,17 @@ export default function CreateAgentPage() {
     }
   }
 
+  const setPair = (next: PairType) => {
+    if (next === form.pairType) return
+    const d = PAIR_DEFAULTS[next]
+    setForm(prev => ({
+      ...prev,
+      pairType: next,
+      initialBuy: d.initialBuy,
+      targetRaise: d.targetRaise,
+    }))
+  }
+
   const handleNext = () => {
     const currentIndex = steps.findIndex(s => s.id === step)
     if (currentIndex < steps.length - 1) {
@@ -173,6 +198,7 @@ export default function CreateAgentPage() {
         llmModel: form.model,
         
         // Economics
+        pairType: form.pairType,
         initialBuy: form.initialBuy,
         targetRaise: form.targetRaise,
         revenueAida: form.revenueShare.stakers,
@@ -464,10 +490,33 @@ export default function CreateAgentPage() {
             <div className="space-y-6">
               <div className="bg-gradient-to-br from-slate-900/90 via-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-2xl border border-white/10 p-6">
                 <h2 className="text-xl font-bold text-white mb-4">Tokenomics & Revenue</h2>
-                
+
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Initial Buy Amount (SUI) *</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Quote Token (Pair)</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {(['SUI', 'AIDA'] as PairType[]).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setPair(p)}
+                          className={`px-4 py-3 rounded-xl border transition-all text-sm font-medium ${
+                            form.pairType === p
+                              ? 'bg-[#D4AF37]/10 border-[#D4AF37] text-[#D4AF37]'
+                              : 'bg-slate-800 border-white/10 text-gray-400 hover:border-white/20'
+                          }`}
+                        >
+                          {p === 'SUI' ? 'SUI pair' : 'AIDA pair'}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Determines which token the bonding curve and DEX pool are denominated in. Switching resets the amounts below to {form.pairType === 'SUI' ? 'SUI' : 'AIDA'} defaults.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Initial Buy Amount ({form.pairType}) *</label>
                     <input
                       type="number"
                       value={form.initialBuy}
@@ -480,13 +529,15 @@ export default function CreateAgentPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Target Raise (1000 minimum) *</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Target Raise ({PAIR_DEFAULTS[form.pairType].targetRaiseMin.toLocaleString()} {form.pairType} minimum) *
+                    </label>
                     <input
                       type="number"
                       value={form.targetRaise}
                       onChange={(e) => setForm({ ...form, targetRaise: parseFloat(e.target.value) })}
-                      min={1000}
-                      step={100}
+                      min={PAIR_DEFAULTS[form.pairType].targetRaiseMin}
+                      step={form.pairType === 'AIDA' ? 1_000_000 : 100}
                       className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50"
                     />
                     <p className="text-xs text-gray-500 mt-2">Bonding curve graduates to DEX at this amount</p>

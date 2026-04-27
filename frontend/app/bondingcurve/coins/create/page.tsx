@@ -225,6 +225,10 @@ export default function CreateTokenPage() {
         setImageUrl(data.image)
         setImage(data.image)
       }
+      // Forward the SUI/AIDA pair choice from /agents/create. Opt-in only:
+      // unset / non-AIDA values leave the existing SUI default alone, so
+      // non-agent flows that never set pairType keep working unchanged.
+      if (data.pairType === 'AIDA') setPairType('AIDA')
       if (data.initialBuy) setFirstBuyAmount(String(data.initialBuy))
       if (data.targetRaise) setTargetRaise(String(data.targetRaise))
     } catch {}
