@@ -1,4 +1,4 @@
-# Odyssey 2.0 — AIDA Pairs Fork
+# The Odyssey — AIDA Pairs Fork
 
 Forked from [TheOdyssey2](https://github.com/aidaonsui-collab/theodyssey2) with support for **AIDA-paired bonding curves**.
 

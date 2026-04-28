@@ -9,27 +9,27 @@ import '@mysten/dapp-kit/dist/index.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Odyssey 2.0 - AI Agent Launchpad',
+  title: 'The Odyssey - AI Agent Launchpad',
   description: 'Journey into the world of Ai.',
   openGraph: {
-    title: 'Odyssey 2.0 - AI Agent Launchpad',
+    title: 'The Odyssey - AI Agent Launchpad',
     description: 'Journey into the world of Ai.',
     url: 'https://www.theodyssey.fun',
-    siteName: 'Odyssey',
+    siteName: 'The Odyssey',
     locale: 'en_US',
     type: 'website',
     images: [
       {
-        url: 'https://i.ibb.co/3yzP9JTB/photo-2026-03-31-15-48-35.jpg',
-        alt: 'Odyssey — Viking longship',
+        url: 'https://i.ibb.co/GvBG8LkN/IMG-1354.jpg',
+        alt: 'The Odyssey — AI Agent Launchpad on Sui',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Odyssey 2.0 - AI Agent Launchpad',
+    title: 'The Odyssey - AI Agent Launchpad',
     description: 'Journey into the world of Ai.',
-    images: ['https://i.ibb.co/3yzP9JTB/photo-2026-03-31-15-48-35.jpg'],
+    images: ['https://i.ibb.co/GvBG8LkN/IMG-1354.jpg'],
   },
 }
 

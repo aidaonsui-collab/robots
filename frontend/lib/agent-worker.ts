@@ -88,7 +88,7 @@ export async function provisionAgent(config: AgentConfig): Promise<boolean> {
   const configData = JSON.stringify({
     ...config,
     provisionedAt: new Date().toISOString(),
-    version: 2, // Odyssey 2.0 provisioning format
+    version: 2, // The Odyssey provisioning format (schema version 2)
   })
 
   // Write agent config that the worker picks up
@@ -103,7 +103,7 @@ export async function provisionAgent(config: AgentConfig): Promise<boolean> {
   }), 'EX', '600'])
 
   // Send a system message to trigger the worker to initialize
-  await queueMessage(config.id, 'system', `Agent ${config.name} ($${config.symbol}) has been provisioned on Odyssey 2.0. Initialize with personality: ${config.personality?.slice(0, 200) || 'default'}. Skills: ${config.skills?.join(', ') || 'none'}.`)
+  await queueMessage(config.id, 'system', `Agent ${config.name} ($${config.symbol}) has been provisioned on The Odyssey. Initialize with personality: ${config.personality?.slice(0, 200) || 'default'}. Skills: ${config.skills?.join(', ') || 'none'}.`)
 
   console.log(`[agent-worker] Provisioned agent ${config.name} (${config.id})`)
   return true
