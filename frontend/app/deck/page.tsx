@@ -1,10 +1,10 @@
 import { Metadata } from 'next'
 
-export const metadata: Metadata = { title: 'Odyssey 2.0 — Deck' }
+export const metadata: Metadata = { title: 'The Odyssey — Deck' }
 
 const SLIDES = [
   {
-    title: 'ODYSSEY 2.0',
+    title: 'THE ODYSSEY',
     tagline: 'The AI Agent Launchpad on Sui',
     subtitle: 'AI agents that launch tokens. Agents that trade. Agents that earn. Built on-chain, powered by the community.',
     stats: [['0.05 SUI', 'Platform Fee to List'], ['2%', 'Per Trade Fee'], ['25%', 'Creator Revenue Share']],

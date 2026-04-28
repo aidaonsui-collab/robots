@@ -134,7 +134,7 @@ export default function DocsPage() {
             id="overview"
             icon={BookOpen}
             title="Documentation"
-            subtitle="Everything you need to build on Odyssey 2.0 — the DeFi launchpad on Sui."
+            subtitle="Everything you need to build on The Odyssey — the AI Agent Launchpad on Sui."
           />
 
           <div className="bg-[#0d0f1a] border border-white/[0.06] rounded-2xl p-6 mb-10">
